@@ -31,6 +31,14 @@ fat:0
 
 };
 
+function saveUser(){
+
+localStorage.setItem(
+"plateiq_user",
+JSON.stringify(user)
+);
+
+}
 
 function addMeal(){
 
