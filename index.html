@@ -1,1 +1,146 @@
-<img src="assets/logo.png" alt="PlateIQ Logo">
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+
+<title>PlateIQ | AI Nutrition Coach</title>
+
+<link rel="stylesheet" href="style.css">
+
+<link rel="manifest" href="manifest.json">
+</head>
+
+<body>
+
+<header>
+    <h1>🥗 PlateIQ</h1>
+    <p>Your AI Nutrition Coach</p>
+</header>
+
+
+<section class="trial-card">
+    <h2>🤖 AI Coach Trial</h2>
+    <p id="trialStatus">
+        3-Day AI Coach Trial Active
+    </p>
+</section>
+
+
+<section class="dashboard">
+
+<div class="card">
+<h3>Calories</h3>
+<p id="calories">
+0 / 2200
+</p>
+</div>
+
+
+<div class="card">
+<h3>Protein</h3>
+<p id="protein">
+0g / 160g
+</p>
+</div>
+
+
+<div class="card">
+<h3>Carbs</h3>
+<p id="carbs">
+0g / 220g
+</p>
+</div>
+
+
+<div class="card">
+<h3>Fat</h3>
+<p id="fat">
+0g / 70g
+</p>
+</div>
+
+</section>
+
+
+
+<section class="meal-box">
+
+<h2>Add Meal</h2>
+
+<input 
+id="foodName"
+placeholder="Food item">
+
+<input 
+id="foodCalories"
+type="number"
+placeholder="Calories">
+
+
+<input 
+id="foodProtein"
+type="number"
+placeholder="Protein grams">
+
+
+<button onclick="addMeal()">
+Add Meal
+</button>
+
+</section>
+
+
+
+<section class="coach">
+
+<h2>🤖 Coach Insight</h2>
+
+<p id="coachMessage">
+Welcome to PlateIQ. Start logging meals.
+</p>
+
+</section>
+
+
+
+<section class="plans">
+
+<h2>Choose Your Plan</h2>
+
+
+<div class="plan">
+<h3>Free</h3>
+<p>$0/month</p>
+<button onclick="selectPlan('free')">
+Choose
+</button>
+</div>
+
+
+<div class="plan">
+<h3>Plus</h3>
+<p>$9.99/month</p>
+<button onclick="selectPlan('plus')">
+Choose
+</button>
+</div>
+
+
+
+<div class="plan ai">
+<h3>AI Coach</h3>
+<p>$19.99/month</p>
+<button onclick="selectPlan('ai')">
+Choose
+</button>
+</div>
+
+
+</section>
+
+
+<script src="app.js"></script>
+
+</body>
+</html>
