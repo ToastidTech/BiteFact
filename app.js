@@ -69,7 +69,24 @@ user.calories += calories;
 
 user.protein += protein;
 
+saveUser();
 
+
+updateDashboard();
+
+
+document.getElementById(
+"coachMessage"
+).innerHTML =
+
+`
+Nice work adding ${food}.
+
+You added ${protein}g protein.
+Keep building toward your goal.
+`;
+
+}
 
 updateDashboard();
 
