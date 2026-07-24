@@ -15,7 +15,7 @@ Date.now()
 
 let user = {
 
-plan:"ai",
+plan:"free",
 
 trial:true,
 
@@ -30,7 +30,6 @@ carbs:0,
 fat:0
 
 };
-
 
 
 function addMeal(){
