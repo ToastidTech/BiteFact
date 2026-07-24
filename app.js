@@ -17,6 +17,8 @@ let user = {
 
 plan:"ai",
 
+trial:true,
+
 trialDays:3,
 
 calories:0,
