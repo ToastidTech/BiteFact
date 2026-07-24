@@ -1,3 +1,18 @@
+const trialStart =
+localStorage.getItem(
+"plateiq_trial"
+);
+
+
+if(!trialStart){
+
+localStorage.setItem(
+"plateiq_trial",
+Date.now()
+);
+
+}
+
 let user = {
 
 plan:"ai",
