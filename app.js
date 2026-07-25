@@ -63,19 +63,6 @@ document.getElementById(
 ).value
 );
 
-function updateDashboard(){
-
-document.getElementById(
-"calories"
-).innerHTML =
-`${user.calories} / 2200`;
-
-document.getElementById(
-"protein"
-).innerHTML =
-`${user.protein}g / 160g`;
-
-}
 
 user.calories += calories;
 
