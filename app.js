@@ -159,5 +159,16 @@ alert(
 }
 
 
+const savedUser =
+localStorage.getItem(
+"plateiq_user"
+);
+
+if(savedUser){
+
+user = JSON.parse(savedUser);
+
+}
+
 
 updateDashboard();
