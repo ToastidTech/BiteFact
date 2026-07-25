@@ -71,22 +71,7 @@ user.protein += protein;
 saveUser();
 }
 
-function updateDashboard(){
 
-document.getElementById(
-"calories"
-).innerHTML =
-
-`${user.calories} / 2200`;
-
-
-document.getElementById(
-"protein"
-).innerHTML =
-
-`${user.protein}g / 160g`;
-
-}
 
 function selectPlan(plan){
 
@@ -133,4 +118,19 @@ user = JSON.parse(savedUser);
 }
 
 
-updateDashboard();
+function updateDashboard(){
+
+document.getElementById(
+"calories"
+).innerHTML =
+
+`${user.calories} / 2200`;
+
+
+document.getElementById(
+"protein"
+).innerHTML =
+
+`${user.protein}g / 160g`;
+
+}
