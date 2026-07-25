@@ -72,29 +72,6 @@ user.protein += protein;
 saveUser();
 
 
-updateDashboard();
-
-
-
-function updateDashboard(){
-
-document.getElementById(
-"calories"
-).innerHTML =
-
-`${user.calories} / 2200`;
-
-
-document.getElementById(
-"protein"
-).innerHTML =
-
-`${user.protein}g / 160g`;
-
-}
-
-
-
 function selectPlan(plan){
 
 user.plan = plan;
