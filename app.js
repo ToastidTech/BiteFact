@@ -69,6 +69,9 @@ user.calories += calories;
 user.protein += protein;
 
 saveUser();
+
+updateDashboard();
+
 }
 
 
@@ -112,7 +115,7 @@ localStorage.getItem(
 );
 
 if(savedUser){
-
+  
 user = JSON.parse(savedUser);
 
 }
