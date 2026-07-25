@@ -137,3 +137,4 @@ document.getElementById(
 `${user.protein}g / 160g`;
 
 }
+updateDashboard();
