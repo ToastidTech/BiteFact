@@ -86,6 +86,12 @@ function selectPlan(plan) {
     }
 }
 
+function openCameraGuide() {
+    document.getElementById("cameraNote").innerHTML =
+        "Camera mode concept: point at the plate, estimate portions, then verify the numbers before saving. Estimates only, never exact.";
+    alert("Camera usage will guide users to estimate portions, then confirm before logging.");
+}
+
 function updateDashboard() {
     document.getElementById("calories").innerHTML = `${user.calories} / 2200`;
     document.getElementById("protein").innerHTML = `${user.protein}g / 160g`;
