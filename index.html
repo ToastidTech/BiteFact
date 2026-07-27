@@ -12,14 +12,28 @@
 
 <body>
 
-<header>
-    <h1>🥗 PlateIQ</h1>
-    <p>Your AI Nutrition Coach</p>
+<header class="app-header">
+    <img class="app-logo" src="assets/logo.png" alt="PlateIQ logo">
+    <div>
+        <h1>PlateIQ</h1>
+        <p>Your AI Nutrition Coach</p>
+    </div>
 </header>
+
+<section class="disclaimer-banner" aria-label="Nutrition disclaimer">
+    <strong>Estimate only:</strong> calories, macros, and AI insights are approximations, not medical advice, and may not be exact.
+</section>
 
 <section class="trial-card">
     <h2>🤖 AI Coach Trial</h2>
     <p id="trialStatus">3-Day AI Coach Trial Active</p>
+</section>
+
+<section class="coach-card">
+    <h2>🤖 AI Coach</h2>
+    <p>Tap the camera to estimate a meal, then confirm the numbers before saving.</p>
+    <button type="button" class="camera-button" onclick="openCameraGuide()">Use Camera</button>
+    <p class="coach-note" id="cameraNote">Camera scans help estimate portions and macros. You always stay in control.</p>
 </section>
 
 <section class="dashboard">
