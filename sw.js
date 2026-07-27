@@ -1,5 +1,5 @@
 const CACHE_NAME =
-"plateiq-v1";
+"plateiq-v2";
 
 
 const FILES = [
