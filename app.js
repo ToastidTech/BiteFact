@@ -1,7 +1,7 @@
-const trialStart = localStorage.getItem("plateiq_trial");
+const trialStart = localStorage.getItem("bitefact_trial");
 
 if (!trialStart) {
-    localStorage.setItem("plateiq_trial", Date.now());
+    localStorage.setItem("bitefact_trial", Date.now());
 }
 
 let user = {
@@ -15,11 +15,11 @@ let user = {
 };
 
 function saveUser() {
-    localStorage.setItem("plateiq_user", JSON.stringify(user));
+    localStorage.setItem("bitefact_user", JSON.stringify(user));
 }
 
 function loadUser() {
-    const savedUser = localStorage.getItem("plateiq_user");
+    const savedUser = localStorage.getItem("bitefact_user");
     if (savedUser) {
         try {
             const parsed = JSON.parse(savedUser);
