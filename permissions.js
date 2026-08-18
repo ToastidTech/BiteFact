@@ -31,7 +31,7 @@ return true;
 
 
 alert(
-"This feature requires an upgraded PlateIQ plan."
+"This feature requires an upgraded BiteFact plan."
 );
 
 
