@@ -1,5 +1,5 @@
 const CACHE_NAME =
-"plateiq-v2";
+"bitefact-v2";
 
 
 const FILES = [
