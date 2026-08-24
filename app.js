@@ -99,12 +99,16 @@ async function analyzeMealWithAI(meal) {
 
 async function addMeal() {
     const food = document.getElementById("foodName").value.trim();
+
     const calories =
         Number(document.getElementById("foodCalories").value) || 0;
+
     const protein =
         Number(document.getElementById("foodProtein").value) || 0;
+
     const carbs =
         Number(document.getElementById("foodCarbs").value) || 0;
+
     const fat =
         Number(document.getElementById("foodFat").value) || 0;
 
@@ -140,36 +144,99 @@ async function addMeal() {
 
 function selectPlan(plan) {
     user.plan = plan;
-    saveUser();
 
     if (plan === "ai") {
+        user.trial = false;
+
+        saveUser();
+
         alert("AI Coach activated!");
 
         document.getElementById("coachMessage").innerHTML =
             "🤖 AI Coach is active. Let’s tighten the macros and keep the momentum.";
+
     } else if (plan === "plus") {
+        saveUser();
+
         alert("Plus plan selected.");
 
         document.getElementById("coachMessage").innerHTML =
             "Plus plan selected. Solid move.";
+
     } else {
+        user.trial = true;
+
+        saveUser();
+
         alert("Free plan selected.");
 
         document.getElementById("coachMessage").innerHTML =
             "Free plan selected. Still tracking, still winning.";
     }
+
+    updateDashboard();
 }
+
+
+/* =========================
+   CAMERA
+   ========================= */
 
 function openCameraGuide() {
-    document.getElementById("cameraNote").innerHTML =
-        "Camera mode concept: point at the plate, estimate portions, then verify the numbers before saving. Estimates only, never exact.";
 
-    alert(
-        "Camera usage will guide users to estimate portions, then confirm before logging."
-    );
+    let cameraInput = document.getElementById("bitefactCameraInput");
+
+    if (!cameraInput) {
+
+        cameraInput = document.createElement("input");
+
+        cameraInput.type = "file";
+        cameraInput.id = "bitefactCameraInput";
+        cameraInput.accept = "image/*";
+        cameraInput.setAttribute("capture", "environment");
+
+        cameraInput.style.display = "none";
+
+        document.body.appendChild(cameraInput);
+
+        cameraInput.addEventListener("change", function () {
+
+            if (!cameraInput.files || !cameraInput.files.length) {
+                return;
+            }
+
+            const photo = cameraInput.files[0];
+
+            const cameraNote =
+                document.getElementById("cameraNote");
+
+            if (cameraNote) {
+                cameraNote.innerHTML =
+                    `📸 Photo captured: ${photo.name}<br>
+                    Estimate your portions, verify the numbers,
+                    then confirm before logging.`;
+            }
+
+            /*
+             * The photo is now available as:
+             * cameraInput.files[0]
+             *
+             * This is where we can connect the image
+             * to BiteFact AI analysis next.
+             */
+        });
+    }
+
+    cameraInput.click();
 }
 
+
+/* =========================
+   DASHBOARD
+   ========================= */
+
 function updateDashboard() {
+
     document.getElementById("calories").innerHTML =
         `${user.calories} / 2200`;
 
@@ -182,27 +249,71 @@ function updateDashboard() {
     document.getElementById("fat").innerHTML =
         `${user.fat}g / 70g`;
 
-    const trialDate = new Date(Number(trialStart));
-    const now = new Date();
 
-    const trialEnd = new Date(
-        trialDate.getTime() + 3 * 24 * 60 * 60 * 1000
-    );
+    /*
+     * AI PLAN OVERRIDES TRIAL TIMER
+     *
+     * If the user has activated AI Coach,
+     * do NOT show "Trial ended."
+     */
 
-    const remainingMs = trialEnd - now;
+    if (user.plan === "ai") {
+
+        document.getElementById("trialStatus").innerHTML =
+            "🤖 AI Coach Active";
+
+        return;
+    }
+
+
+    /*
+     * Otherwise calculate the original
+     * 3-day trial.
+     */
+
+    const currentTrialStart =
+        localStorage.getItem("bitefact_trial");
+
+    if (!currentTrialStart) {
+        document.getElementById("trialStatus").innerHTML =
+            "AI Coach Trial Available";
+
+        return;
+    }
+
+    const trialDate =
+        new Date(Number(currentTrialStart));
+
+    const now =
+        new Date();
+
+    const trialEnd =
+        new Date(
+            trialDate.getTime() +
+            3 * 24 * 60 * 60 * 1000
+        );
+
+    const remainingMs =
+        trialEnd - now;
 
     if (remainingMs > 0) {
-        const daysLeft = Math.ceil(
-            remainingMs / (24 * 60 * 60 * 1000)
-        );
+
+        const daysLeft =
+            Math.ceil(
+                remainingMs /
+                (24 * 60 * 60 * 1000)
+            );
 
         document.getElementById("trialStatus").innerHTML =
             `${daysLeft}-Day AI Coach Trial Active`;
+
     } else {
+
         document.getElementById("trialStatus").innerHTML =
             "Trial ended. Upgrade to continue using AI Coach.";
     }
 }
+
 
 loadUser();
 updateDashboard();
