@@ -194,12 +194,11 @@ function openCameraGuide() {
         cameraInput.id = "bitefactCameraInput";
         cameraInput.accept = "image/*";
         cameraInput.setAttribute("capture", "environment");
-
         cameraInput.style.display = "none";
 
         document.body.appendChild(cameraInput);
 
-        cameraInput.addEventListener("change", function () {
+        cameraInput.addEventListener("change", async function () {
 
             if (!cameraInput.files || !cameraInput.files.length) {
                 return;
@@ -212,22 +211,210 @@ function openCameraGuide() {
 
             if (cameraNote) {
                 cameraNote.innerHTML =
-                    `📸 Photo captured: ${photo.name}<br>
-                    Estimate your portions, verify the numbers,
-                    then confirm before logging.`;
+                    "🤖 BiteFact AI is analyzing your food photo...";
             }
 
-            /*
-             * The photo is now available as:
-             * cameraInput.files[0]
-             *
-             * This is where we can connect the image
-             * to BiteFact AI analysis next.
-             */
+            try {
+
+                const imageBase64 = await fileToBase64(photo);
+
+                const response = await fetch(AI_API_URL, {
+                    method: "POST",
+                    headers: {
+                        "Content-Type": "application/json"
+                    },
+                    body: JSON.stringify({
+                        image: imageBase64
+                    })
+                });
+
+                if (!response.ok) {
+                    throw new Error(
+                        `AI API returned ${response.status}`
+                    );
+                }
+
+                const data = await response.json();
+
+                let result = data;
+
+                if (typeof data.body === "string") {
+                    try {
+                        result = JSON.parse(data.body);
+                    } catch {
+                        result = data.body;
+                    }
+                }
+
+                displayAIResults(result);
+
+            } catch (error) {
+
+                console.error(
+                    "BiteFact camera AI error:",
+                    error
+                );
+
+                if (cameraNote) {
+                    cameraNote.innerHTML =
+                        "❌ BiteFact AI could not analyze this photo. Please try again.";
+                }
+            }
         });
     }
 
+    cameraInput.value = "";
     cameraInput.click();
+}
+
+
+/* =========================
+   IMAGE → BASE64
+   ========================= */
+
+function fileToBase64(file) {
+
+    return new Promise((resolve, reject) => {
+
+        const reader = new FileReader();
+
+        reader.onload = () => resolve(reader.result);
+
+        reader.onerror = () =>
+            reject(
+                new Error("Could not read food photo.")
+            );
+
+        reader.readAsDataURL(file);
+    });
+}
+
+
+/* =========================
+   AI RESULTS
+   ========================= */
+
+function displayAIResults(result) {
+
+    const cameraNote =
+        document.getElementById("cameraNote");
+
+    if (!cameraNote) {
+        return;
+    }
+
+    const food =
+        result.food ||
+        result.name ||
+        result.foodName ||
+        "Food detected";
+
+    const calories =
+        Number(result.calories) || 0;
+
+    const protein =
+        Number(result.protein) || 0;
+
+    const carbs =
+        Number(result.carbs) || 0;
+
+    const fat =
+        Number(result.fat) || 0;
+
+    const portion =
+        result.portion ||
+        result.serving ||
+        "1 serving";
+
+    cameraNote.innerHTML = `
+        <div class="bitefact-ai-result">
+
+            <h3>🍽️ ${food}</h3>
+
+            <label>
+                Portion
+                <input
+                    id="aiPortion"
+                    type="text"
+                    value="${portion}"
+                >
+            </label>
+
+            <p>
+                🔥 Calories: <strong>${calories}</strong>
+            </p>
+
+            <p>
+                💪 Protein: <strong>${protein}g</strong>
+            </p>
+
+            <p>
+                🍞 Carbs: <strong>${carbs}g</strong>
+            </p>
+
+            <p>
+                🥑 Fat: <strong>${fat}g</strong>
+            </p>
+
+            <button
+                type="button"
+                onclick="logAIResult()"
+            >
+                ✅ Verify & Log
+            </button>
+
+        </div>
+    `;
+
+    window.bitefactAIResult = {
+        food,
+        calories,
+        protein,
+        carbs,
+        fat,
+        portion
+    };
+}
+
+
+/* =========================
+   LOG AI RESULT
+   ========================= */
+
+function logAIResult() {
+
+    const result = window.bitefactAIResult;
+
+    if (!result) {
+        alert("No AI result is available.");
+        return;
+    }
+
+    user.calories += result.calories;
+    user.protein += result.protein;
+    user.carbs += result.carbs;
+    user.fat += result.fat;
+
+    saveUser();
+    updateDashboard();
+
+    const cameraNote =
+        document.getElementById("cameraNote");
+
+    if (cameraNote) {
+        cameraNote.innerHTML =
+            `✅ ${result.food} logged successfully.`;
+    }
+
+    const coachMessage =
+        document.getElementById("coachMessage");
+
+    if (coachMessage) {
+        coachMessage.innerHTML =
+            `🤖 ${result.food} added to your daily nutrition.`;
+    }
+
+    window.bitefactAIResult = null;
 }
 
 
