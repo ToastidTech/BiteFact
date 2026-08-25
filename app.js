@@ -560,16 +560,6 @@ function displayAIResults(result) {
     `;
 }
 
-    window.bitefactAIResult = {
-        food,
-        calories,
-        protein,
-        carbs,
-        fat,
-        portion
-    };
-}
-
 
 /* =========================
    LOG AI RESULT
