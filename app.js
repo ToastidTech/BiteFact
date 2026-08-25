@@ -179,6 +179,7 @@ function selectPlan(plan) {
     updateDashboard();
 }
 
+
 /* =========================
    CAMERA
    ========================= */
