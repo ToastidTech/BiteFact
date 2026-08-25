@@ -68,6 +68,8 @@ async function analyzeMealWithAI(meal) {
 
         const data = await response.json();
 
+        console.log("BiteFact AI response:", data);
+
         let result = data;
 
         if (typeof data.body === "string") {
