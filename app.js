@@ -254,11 +254,6 @@ function openCameraGuide() {
                     "BiteFact camera AI error:",
                     error
                 );
-
-                if (cameraNote) {
-                    cameraNote.innerHTML =
-                        "❌ BiteFact AI could not analyze this photo. Please try again.";
-                }
             }
         });
     }
