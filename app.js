@@ -184,9 +184,16 @@ function selectPlan(plan) {
    CAMERA
    ========================= */
 
-function openCameraGuide() {
+function openCameraGuide(event) {
 
-    let cameraInput = document.getElementById("bitefactCameraInput");
+    // Prevent the camera button from submitting a form
+    if (event) {
+        event.preventDefault();
+        event.stopPropagation();
+    }
+
+    let cameraInput =
+        document.getElementById("bitefactCameraInput");
 
     if (!cameraInput) {
 
@@ -196,72 +203,190 @@ function openCameraGuide() {
         cameraInput.id = "bitefactCameraInput";
         cameraInput.accept = "image/*";
         cameraInput.setAttribute("capture", "environment");
+
         cameraInput.style.display = "none";
 
         document.body.appendChild(cameraInput);
 
-        cameraInput.addEventListener("change", async function () {
-
-            if (!cameraInput.files || !cameraInput.files.length) {
-                return;
-            }
-
-            const photo = cameraInput.files[0];
-
-            const cameraNote =
-                document.getElementById("cameraNote");
-
-            if (cameraNote) {
-                cameraNote.innerHTML =
-                    "🤖 BiteFact AI is analyzing your food photo...";
-            }
-
-            try {
-
-                const imageBase64 = await fileToBase64(photo);
-
-                const response = await fetch(AI_API_URL, {
-                    method: "POST",
-                    headers: {
-                        "Content-Type": "application/json"
-                    },
-                    body: JSON.stringify({
-                        image: imageBase64
-                    })
-                });
-
-                if (!response.ok) {
-                    throw new Error(
-                        `AI API returned ${response.status}`
-                    );
-                }
-
-                const data = await response.json();
-
-                let result = data;
-
-                if (typeof data.body === "string") {
-                    try {
-                        result = JSON.parse(data.body);
-                    } catch {
-                        result = data.body;
-                    }
-                }
-
-                displayAIResults(result);
-
-            } catch (error) {
-
-                console.error(
-                    "BiteFact camera AI error:",
-                    error
-                );
-            }
-        });
+        cameraInput.addEventListener(
+            "change",
+            handleBiteFactCameraPhoto
+        );
     }
 
     cameraInput.value = "";
     cameraInput.click();
+
+    return false;
+}
+
+
+/* =========================
+   CAMERA PHOTO HANDLER
+   ========================= */
+
+async function handleBiteFactCameraPhoto(event) {
+
+    const cameraInput = event.target;
+
+    if (!cameraInput.files || !cameraInput.files.length) {
+        return;
+    }
+
+    const photo = cameraInput.files[0];
+
+    const cameraNote =
+        document.getElementById("cameraNote");
+
+    if (cameraNote) {
+
+        cameraNote.innerHTML = `
+            <div class="bitefact-ai-result">
+                <h3>🤖 BiteFact AI</h3>
+                <p>Analyzing your food photo...</p>
+            </div>
+        `;
+    }
+
+    try {
+
+        console.log("BiteFact camera photo:", photo);
+
+        const imageBase64 =
+            await fileToBase64(photo);
+
+        console.log(
+            "BiteFact image converted to Base64."
+        );
+
+        const response =
+            await fetch(AI_API_URL, {
+
+                method: "POST",
+
+                headers: {
+                    "Content-Type": "application/json"
+                },
+
+                body: JSON.stringify({
+                    image: imageBase64
+                })
+            });
+
+        console.log(
+            "BiteFact AI HTTP status:",
+            response.status
+        );
+
+        if (!response.ok) {
+
+            throw new Error(
+                `AI API returned ${response.status}`
+            );
+        }
+
+        const data =
+            await response.json();
+
+        console.log(
+            "BiteFact AI raw response:",
+            data
+        );
+
+        let result = data;
+
+
+        /*
+         * API Gateway / Lambda may return:
+         *
+         * {
+         *   statusCode: 200,
+         *   body: "{...}"
+         * }
+         */
+
+        if (
+            data &&
+            typeof data.body === "string"
+        ) {
+
+            try {
+
+                result =
+                    JSON.parse(data.body);
+
+            } catch {
+
+                console.warn(
+                    "Lambda body was not JSON:",
+                    data.body
+                );
+
+                result = {
+                    message: data.body
+                };
+            }
+        }
+
+
+        /*
+         * Some APIs return another nested
+         * response object.
+         */
+
+        if (
+            result &&
+            result.body &&
+            typeof result.body === "string"
+        ) {
+
+            try {
+
+                result =
+                    JSON.parse(result.body);
+
+            } catch {
+
+                console.warn(
+                    "Nested Lambda body was not JSON."
+                );
+            }
+        }
+
+        console.log(
+            "BiteFact AI parsed result:",
+            result
+        );
+
+        displayAIResults(result);
+
+    } catch (error) {
+
+        console.error(
+            "BiteFact camera AI error:",
+            error
+        );
+
+        if (cameraNote) {
+
+            cameraNote.innerHTML = `
+                <div class="bitefact-ai-result">
+
+                    <h3>⚠️ BiteFact AI</h3>
+
+                    <p>
+                        We got your photo, but BiteFact
+                        could not analyze it yet.
+                    </p>
+
+                    <p style="font-size:12px;">
+                        ${error.message || "Unknown error"}
+                    </p>
+
+                </div>
+            `;
+        }
+    }
 }
 
 
@@ -273,14 +398,22 @@ function fileToBase64(file) {
 
     return new Promise((resolve, reject) => {
 
-        const reader = new FileReader();
+        const reader =
+            new FileReader();
 
-        reader.onload = () => resolve(reader.result);
+        reader.onload = () => {
 
-        reader.onerror = () =>
+            resolve(reader.result);
+        };
+
+        reader.onerror = () => {
+
             reject(
-                new Error("Could not read food photo.")
+                new Error(
+                    "Could not read food photo."
+                )
             );
+        };
 
         reader.readAsDataURL(file);
     });
@@ -297,8 +430,27 @@ function displayAIResults(result) {
         document.getElementById("cameraNote");
 
     if (!cameraNote) {
+
+        console.error(
+            "BiteFact error: #cameraNote was not found."
+        );
+
         return;
     }
+
+
+    /*
+     * Make sure result is an object.
+     */
+
+    if (
+        !result ||
+        typeof result !== "object"
+    ) {
+
+        result = {};
+    }
+
 
     const food =
         result.food ||
@@ -306,30 +458,70 @@ function displayAIResults(result) {
         result.foodName ||
         "Food detected";
 
+
     const calories =
         Number(result.calories) || 0;
+
 
     const protein =
         Number(result.protein) || 0;
 
+
     const carbs =
         Number(result.carbs) || 0;
 
+
     const fat =
         Number(result.fat) || 0;
+
 
     const portion =
         result.portion ||
         result.serving ||
         "1 serving";
 
+
+    console.log(
+        "BiteFact final nutrition:",
+        {
+            food,
+            portion,
+            calories,
+            protein,
+            carbs,
+            fat
+        }
+    );
+
+
+    /*
+     * Store the result BEFORE displaying it.
+     */
+
+    window.bitefactAIResult = {
+
+        food,
+        calories,
+        protein,
+        carbs,
+        fat,
+        portion
+    };
+
+
+    /*
+     * Display the estimation.
+     */
+
     cameraNote.innerHTML = `
+
         <div class="bitefact-ai-result">
 
             <h3>🍽️ ${food}</h3>
 
             <label>
                 Portion
+
                 <input
                     id="aiPortion"
                     type="text"
@@ -338,19 +530,23 @@ function displayAIResults(result) {
             </label>
 
             <p>
-                🔥 Calories: <strong>${calories}</strong>
+                🔥 Calories:
+                <strong>${calories}</strong>
             </p>
 
             <p>
-                💪 Protein: <strong>${protein}g</strong>
+                💪 Protein:
+                <strong>${protein}g</strong>
             </p>
 
             <p>
-                🍞 Carbs: <strong>${carbs}g</strong>
+                🍞 Carbs:
+                <strong>${carbs}g</strong>
             </p>
 
             <p>
-                🥑 Fat: <strong>${fat}g</strong>
+                🥑 Fat:
+                <strong>${fat}g</strong>
             </p>
 
             <button
@@ -362,6 +558,7 @@ function displayAIResults(result) {
 
         </div>
     `;
+}
 
     window.bitefactAIResult = {
         food,
