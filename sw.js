@@ -1,5 +1,5 @@
 const CACHE_NAME =
-"bitefact-v4";
+"bitefact-v5";
 
 
 const FILES = [
