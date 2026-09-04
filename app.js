@@ -1,5 +1,6 @@
-const AI_API_URL =
-    "https://m180adcme9.execute-api.us-west-2.amazonaws.com/bitefact-ai-analyze";
+// BiteFact AI endpoint.
+// The Perplexity key stays server-side in /api/bitefact-ai-analyze.js.
+const AI_API_URL = "/api/bitefact-ai-analyze";
 
 const trialStart = localStorage.getItem("bitefact_trial");
 
@@ -62,34 +63,20 @@ async function analyzeMealWithAI(meal) {
             })
         });
 
-        if (!response.ok) {
-            throw new Error(`AI API returned ${response.status}`);
-        }
+        const data = await response.json().catch(() => ({}));
 
-        const data = await response.json();
+        if (!response.ok) {
+            throw new Error(data.error || `AI API returned ${response.status}`);
+        }
 
         console.log("BiteFact AI response:", data);
 
-        let result = data;
-
-        if (typeof data.body === "string") {
-            try {
-                result = JSON.parse(data.body);
-            } catch {
-                result = data.body;
-            }
-        }
-
         const insight =
-            result.message ||
-            result.insight ||
-            result.analysis ||
-            result.response ||
-            result.text ||
-            result.body ||
+            data.notes ||
+            data.message ||
             "Meal analyzed successfully.";
 
-        coachMessage.innerHTML = `🤖 ${insight}`;
+        coachMessage.innerHTML = `🤖 ${escapeHtml(insight)}`;
 
     } catch (error) {
         console.error("BiteFact AI error:", error);
@@ -102,17 +89,10 @@ async function analyzeMealWithAI(meal) {
 async function addMeal() {
     const food = document.getElementById("foodName").value.trim();
 
-    const calories =
-        Number(document.getElementById("foodCalories").value) || 0;
-
-    const protein =
-        Number(document.getElementById("foodProtein").value) || 0;
-
-    const carbs =
-        Number(document.getElementById("foodCarbs").value) || 0;
-
-    const fat =
-        Number(document.getElementById("foodFat").value) || 0;
+    const calories = Number(document.getElementById("foodCalories").value) || 0;
+    const protein = Number(document.getElementById("foodProtein").value) || 0;
+    const carbs = Number(document.getElementById("foodCarbs").value) || 0;
+    const fat = Number(document.getElementById("foodFat").value) || 0;
 
     if (!food) {
         alert("Please enter a food item.");
@@ -127,13 +107,7 @@ async function addMeal() {
     saveUser();
     updateDashboard();
 
-    const meal = {
-        food,
-        calories,
-        protein,
-        carbs,
-        fat
-    };
+    const meal = { food, calories, protein, carbs, fat };
 
     document.getElementById("foodName").value = "";
     document.getElementById("foodCalories").value = "";
@@ -149,11 +123,9 @@ function selectPlan(plan) {
 
     if (plan === "ai") {
         user.trial = false;
-
         saveUser();
 
         alert("AI Coach activated!");
-
         document.getElementById("coachMessage").innerHTML =
             "🤖 AI Coach is active. Let’s tighten the macros and keep the momentum.";
 
@@ -161,17 +133,14 @@ function selectPlan(plan) {
         saveUser();
 
         alert("Plus plan selected.");
-
         document.getElementById("coachMessage").innerHTML =
             "Plus plan selected. Solid move.";
 
     } else {
         user.trial = true;
-
         saveUser();
 
         alert("Free plan selected.");
-
         document.getElementById("coachMessage").innerHTML =
             "Free plan selected. Still tracking, still winning.";
     }
@@ -179,39 +148,28 @@ function selectPlan(plan) {
     updateDashboard();
 }
 
-
 /* =========================
    CAMERA
    ========================= */
 
 function openCameraGuide(event) {
-
-    // Prevent the camera button from submitting a form
     if (event) {
         event.preventDefault();
         event.stopPropagation();
     }
 
-    let cameraInput =
-        document.getElementById("bitefactCameraInput");
+    let cameraInput = document.getElementById("bitefactCameraInput");
 
     if (!cameraInput) {
-
         cameraInput = document.createElement("input");
-
         cameraInput.type = "file";
         cameraInput.id = "bitefactCameraInput";
-        cameraInput.accept = "image/*";
+        cameraInput.accept = "image/jpeg,image/png,image/webp,image/gif";
         cameraInput.setAttribute("capture", "environment");
-
         cameraInput.style.display = "none";
 
         document.body.appendChild(cameraInput);
-
-        cameraInput.addEventListener(
-            "change",
-            handleBiteFactCameraPhoto
-        );
+        cameraInput.addEventListener("change", handleBiteFactCameraPhoto);
     }
 
     cameraInput.value = "";
@@ -220,13 +178,11 @@ function openCameraGuide(event) {
     return false;
 }
 
-
 /* =========================
    CAMERA PHOTO HANDLER
    ========================= */
 
 async function handleBiteFactCameraPhoto(event) {
-
     const cameraInput = event.target;
 
     if (!cameraInput.files || !cameraInput.files.length) {
@@ -234,12 +190,9 @@ async function handleBiteFactCameraPhoto(event) {
     }
 
     const photo = cameraInput.files[0];
-
-    const cameraNote =
-        document.getElementById("cameraNote");
+    const cameraNote = document.getElementById("cameraNote");
 
     if (cameraNote) {
-
         cameraNote.innerHTML = `
             <div class="bitefact-ai-result">
                 <h3>🤖 BiteFact AI</h3>
@@ -249,257 +202,145 @@ async function handleBiteFactCameraPhoto(event) {
     }
 
     try {
-
         console.log("BiteFact camera photo:", photo);
 
-        const imageBase64 =
-            await fileToBase64(photo);
+        const imageBase64 = await fileToBase64(photo);
 
-        console.log(
-            "BiteFact image converted to Base64."
-        );
+        console.log("BiteFact image compressed and converted to Base64.");
 
-        const response =
-            await fetch(AI_API_URL, {
+        const controller = new AbortController();
+        const timeout = setTimeout(() => controller.abort(), 60000);
 
+        let response;
+
+        try {
+            response = await fetch(AI_API_URL, {
                 method: "POST",
-
                 headers: {
                     "Content-Type": "application/json"
                 },
-
                 body: JSON.stringify({
                     image: imageBase64
-                })
+                }),
+                signal: controller.signal
             });
+        } finally {
+            clearTimeout(timeout);
+        }
 
-        console.log(
-            "BiteFact AI HTTP status:",
-            response.status
-        );
+        const data = await response.json().catch(() => ({}));
+
+        console.log("BiteFact AI HTTP status:", response.status);
+        console.log("BiteFact AI response:", data);
 
         if (!response.ok) {
-
-            throw new Error(
-                `AI API returned ${response.status}`
-            );
+            throw new Error(data.error || `AI API returned ${response.status}`);
         }
 
-        const data =
-            await response.json();
-
-        console.log(
-            "BiteFact AI raw response:",
-            data
-        );
-
-        let result = data;
-
-
-        /*
-         * API Gateway / Lambda may return:
-         *
-         * {
-         *   statusCode: 200,
-         *   body: "{...}"
-         * }
-         */
-
-        if (
-            data &&
-            typeof data.body === "string"
-        ) {
-
-            try {
-
-                result =
-                    JSON.parse(data.body);
-
-            } catch {
-
-                console.warn(
-                    "Lambda body was not JSON:",
-                    data.body
-                );
-
-                result = {
-                    message: data.body
-                };
-            }
-        }
-
-
-        /*
-         * Some APIs return another nested
-         * response object.
-         */
-
-        if (
-            result &&
-            result.body &&
-            typeof result.body === "string"
-        ) {
-
-            try {
-
-                result =
-                    JSON.parse(result.body);
-
-            } catch {
-
-                console.warn(
-                    "Nested Lambda body was not JSON."
-                );
-            }
-        }
-
-        console.log(
-            "BiteFact AI parsed result:",
-            result
-        );
-
-        displayAIResults(result);
+        displayAIResults(data);
 
     } catch (error) {
-
-        console.error(
-            "BiteFact camera AI error:",
-            error
-        );
+        console.error("BiteFact camera AI error:", error);
 
         if (cameraNote) {
+            const message = error.name === "AbortError"
+                ? "The AI analysis took too long. Please try the photo again."
+                : (error.message || "Unknown error");
 
             cameraNote.innerHTML = `
                 <div class="bitefact-ai-result">
-
                     <h3>⚠️ BiteFact AI</h3>
-
-                    <p>
-                        We got your photo, but BiteFact
-                        could not analyze it yet.
-                    </p>
-
-                    <p style="font-size:12px;">
-                        ${error.message || "Unknown error"}
-                    </p>
-
+                    <p>We got your photo, but BiteFact could not analyze it yet.</p>
+                    <p style="font-size:12px;">${escapeHtml(message)}</p>
                 </div>
             `;
         }
     }
 }
 
-
 /* =========================
-   IMAGE → BASE64
+   IMAGE → COMPRESSED BASE64
    ========================= */
 
 function fileToBase64(file) {
-
     return new Promise((resolve, reject) => {
+        if (!file || !file.type.startsWith("image/")) {
+            reject(new Error("Please select a valid food photo."));
+            return;
+        }
 
-        const reader =
-            new FileReader();
+        const reader = new FileReader();
 
         reader.onload = () => {
+            const image = new Image();
 
-            resolve(reader.result);
+            image.onload = () => {
+                const maxDimension = 1600;
+                const scale = Math.min(
+                    1,
+                    maxDimension / Math.max(image.naturalWidth, image.naturalHeight)
+                );
+
+                const width = Math.max(1, Math.round(image.naturalWidth * scale));
+                const height = Math.max(1, Math.round(image.naturalHeight * scale));
+
+                const canvas = document.createElement("canvas");
+                canvas.width = width;
+                canvas.height = height;
+
+                const context = canvas.getContext("2d", { alpha: false });
+                context.drawImage(image, 0, 0, width, height);
+
+                const compressed = canvas.toDataURL("image/jpeg", 0.82);
+                resolve(compressed);
+            };
+
+            image.onerror = () => reject(new Error("Could not process food photo."));
+            image.src = reader.result;
         };
 
-        reader.onerror = () => {
-
-            reject(
-                new Error(
-                    "Could not read food photo."
-                )
-            );
-        };
-
+        reader.onerror = () => reject(new Error("Could not read food photo."));
         reader.readAsDataURL(file);
     });
 }
-
 
 /* =========================
    AI RESULTS
    ========================= */
 
 function displayAIResults(result) {
-
-    const cameraNote =
-        document.getElementById("cameraNote");
+    const cameraNote = document.getElementById("cameraNote");
 
     if (!cameraNote) {
-
-        console.error(
-            "BiteFact error: #cameraNote was not found."
-        );
-
+        console.error("BiteFact error: #cameraNote was not found.");
         return;
     }
 
-
-    /*
-     * Make sure result is an object.
-     */
-
-    if (
-        !result ||
-        typeof result !== "object"
-    ) {
-
+    if (!result || typeof result !== "object") {
         result = {};
     }
 
+    const food = result.food || result.name || result.foodName || "Food detected";
+    const calories = Number(result.calories) || 0;
+    const protein = Number(result.protein) || 0;
+    const carbs = Number(result.carbs) || 0;
+    const fat = Number(result.fat) || 0;
+    const portion = result.portion || result.serving || "1 serving";
+    const confidence = Number(result.confidence);
+    const notes = result.notes || "Nutrition values are estimates.";
 
-    const food =
-        result.food ||
-        result.name ||
-        result.foodName ||
-        "Food detected";
-
-
-    const calories =
-        Number(result.calories) || 0;
-
-
-    const protein =
-        Number(result.protein) || 0;
-
-
-    const carbs =
-        Number(result.carbs) || 0;
-
-
-    const fat =
-        Number(result.fat) || 0;
-
-
-    const portion =
-        result.portion ||
-        result.serving ||
-        "1 serving";
-
-
-    console.log(
-        "BiteFact final nutrition:",
-        {
-            food,
-            portion,
-            calories,
-            protein,
-            carbs,
-            fat
-        }
-    );
-
-
-    /*
-     * Store the result BEFORE displaying it.
-     */
+    console.log("BiteFact final nutrition:", {
+        food,
+        portion,
+        calories,
+        protein,
+        carbs,
+        fat,
+        confidence,
+        notes
+    });
 
     window.bitefactAIResult = {
-
         food,
         calories,
         protein,
@@ -508,70 +349,49 @@ function displayAIResults(result) {
         portion
     };
 
-
-    /*
-     * Display the estimation.
-     */
+    const confidenceText = Number.isFinite(confidence)
+        ? `<p style="font-size:12px;">AI confidence: ${Math.round(confidence * 100)}%</p>`
+        : "";
 
     cameraNote.innerHTML = `
-
         <div class="bitefact-ai-result">
-
-            <h3>🍽️ ${food}</h3>
+            <h3>🍽️ ${escapeHtml(food)}</h3>
 
             <label>
                 Portion
-
-                <input
-                    id="aiPortion"
-                    type="text"
-                    value="${portion}"
-                >
+                <input id="aiPortion" type="text" value="${escapeAttribute(portion)}">
             </label>
 
-            <p>
-                🔥 Calories:
-                <strong>${calories}</strong>
-            </p>
+            <p>🔥 Calories: <strong>${Math.round(calories)}</strong></p>
+            <p>💪 Protein: <strong>${protein}g</strong></p>
+            <p>🍞 Carbs: <strong>${carbs}g</strong></p>
+            <p>🥑 Fat: <strong>${fat}g</strong></p>
 
-            <p>
-                💪 Protein:
-                <strong>${protein}g</strong>
-            </p>
+            ${confidenceText}
+            <p style="font-size:12px;">${escapeHtml(notes)}</p>
 
-            <p>
-                🍞 Carbs:
-                <strong>${carbs}g</strong>
-            </p>
-
-            <p>
-                🥑 Fat:
-                <strong>${fat}g</strong>
-            </p>
-
-            <button
-                type="button"
-                onclick="logAIResult()"
-            >
+            <button type="button" onclick="logAIResult()">
                 ✅ Verify & Log
             </button>
-
         </div>
     `;
 }
-
 
 /* =========================
    LOG AI RESULT
    ========================= */
 
 function logAIResult() {
-
     const result = window.bitefactAIResult;
 
     if (!result) {
         alert("No AI result is available.");
         return;
+    }
+
+    const portionInput = document.getElementById("aiPortion");
+    if (portionInput && portionInput.value.trim()) {
+        result.portion = portionInput.value.trim();
     }
 
     user.calories += result.calories;
@@ -582,109 +402,73 @@ function logAIResult() {
     saveUser();
     updateDashboard();
 
-    const cameraNote =
-        document.getElementById("cameraNote");
-
+    const cameraNote = document.getElementById("cameraNote");
     if (cameraNote) {
-        cameraNote.innerHTML =
-            `✅ ${result.food} logged successfully.`;
+        cameraNote.innerHTML = `✅ ${escapeHtml(result.food)} logged successfully.`;
     }
 
-    const coachMessage =
-        document.getElementById("coachMessage");
-
+    const coachMessage = document.getElementById("coachMessage");
     if (coachMessage) {
         coachMessage.innerHTML =
-            `🤖 ${result.food} added to your daily nutrition.`;
+            `🤖 ${escapeHtml(result.food)} added to your daily nutrition.`;
     }
 
     window.bitefactAIResult = null;
 }
-
 
 /* =========================
    DASHBOARD
    ========================= */
 
 function updateDashboard() {
-
-    document.getElementById("calories").innerHTML =
-        `${user.calories} / 2200`;
-
-    document.getElementById("protein").innerHTML =
-        `${user.protein}g / 160g`;
-
-    document.getElementById("carbs").innerHTML =
-        `${user.carbs}g / 220g`;
-
-    document.getElementById("fat").innerHTML =
-        `${user.fat}g / 70g`;
-
-
-    /*
-     * AI PLAN OVERRIDES TRIAL TIMER
-     *
-     * If the user has activated AI Coach,
-     * do NOT show "Trial ended."
-     */
+    document.getElementById("calories").innerHTML = `${user.calories} / 2200`;
+    document.getElementById("protein").innerHTML = `${user.protein}g / 160g`;
+    document.getElementById("carbs").innerHTML = `${user.carbs}g / 220g`;
+    document.getElementById("fat").innerHTML = `${user.fat}g / 70g`;
 
     if (user.plan === "ai") {
-
-        document.getElementById("trialStatus").innerHTML =
-            "🤖 AI Coach Active";
-
+        document.getElementById("trialStatus").innerHTML = "🤖 AI Coach Active";
         return;
     }
 
-
-    /*
-     * Otherwise calculate the original
-     * 3-day trial.
-     */
-
-    const currentTrialStart =
-        localStorage.getItem("bitefact_trial");
+    const currentTrialStart = localStorage.getItem("bitefact_trial");
 
     if (!currentTrialStart) {
-        document.getElementById("trialStatus").innerHTML =
-            "AI Coach Trial Available";
-
+        document.getElementById("trialStatus").innerHTML = "AI Coach Trial Available";
         return;
     }
 
-    const trialDate =
-        new Date(Number(currentTrialStart));
-
-    const now =
-        new Date();
-
-    const trialEnd =
-        new Date(
-            trialDate.getTime() +
-            3 * 24 * 60 * 60 * 1000
-        );
-
-    const remainingMs =
-        trialEnd - now;
+    const trialDate = new Date(Number(currentTrialStart));
+    const now = new Date();
+    const trialEnd = new Date(trialDate.getTime() + 3 * 24 * 60 * 60 * 1000);
+    const remainingMs = trialEnd - now;
 
     if (remainingMs > 0) {
-
-        const daysLeft =
-            Math.ceil(
-                remainingMs /
-                (24 * 60 * 60 * 1000)
-            );
-
+        const daysLeft = Math.ceil(remainingMs / (24 * 60 * 60 * 1000));
         document.getElementById("trialStatus").innerHTML =
             `${daysLeft}-Day AI Coach Trial Active`;
-
     } else {
-
         document.getElementById("trialStatus").innerHTML =
             "Trial ended. Upgrade to continue using AI Coach.";
     }
 }
 
+/* =========================
+   SAFE UI HELPERS
+   ========================= */
+
+function escapeHtml(value) {
+    return String(value)
+        .replace(/&/g, "&amp;")
+        .replace(/</g, "&lt;")
+        .replace(/>/g, "&gt;")
+        .replace(/\"/g, "&quot;")
+        .replace(/'/g, "&#039;");
+}
+
+function escapeAttribute(value) {
+    return escapeHtml(value).replace(/`/g, "&#096;");
+}
 
 loadUser();
 updateDashboard();
