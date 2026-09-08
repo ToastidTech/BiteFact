@@ -1,4 +1,4 @@
-const CACHE_NAME = "bitefact-v9";
+const CACHE_NAME = "bitefact-v10";
 
 const FILES = [
   "./",
@@ -7,7 +7,9 @@ const FILES = [
   "app.js",
   "plans.js",
   "permissions.js",
-  "manifest.json"
+  "manifest.json",
+  "assets/logo.png",
+  "assets/button-logo.png"
 ];
 
 self.addEventListener("install", event => {
@@ -31,6 +33,10 @@ self.addEventListener("activate", event => {
 });
 
 self.addEventListener("fetch", event => {
+  if (new URL(event.request.url).pathname.startsWith("/api/")) {
+    return;
+  }
+
   event.respondWith(
     caches.match(event.request).then(response =>
       response || fetch(event.request)
