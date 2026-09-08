@@ -3,11 +3,17 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
+<meta name="theme-color" content="#00aaff">
+<meta name="description" content="BiteFact is an AI-powered nutrition coach for estimating meals, tracking calories and macros, and building healthier habits.">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
 
 <title>BiteFact | AI Nutrition Coach</title>
 
 <link rel="stylesheet" href="style.css">
 <link rel="manifest" href="manifest.json">
+<link rel="icon" href="assets/logo.png" type="image/png">
+<link rel="apple-touch-icon" href="assets/logo.png">
 </head>
 
 <body>
@@ -68,7 +74,7 @@
     <input id="foodCarbs" type="number" placeholder="Carbs grams">
     <input id="foodFat" type="number" placeholder="Fat grams">
 
-    <button onclick="addMeal()">
+    <button type="button" onclick="addMeal()">
         Add Meal
     </button>
 </section>
@@ -86,7 +92,7 @@
     <div class="plan">
         <h3>Free</h3>
         <p>$0/month</p>
-        <button onclick="selectPlan('free')">
+        <button type="button" onclick="selectPlan('free')">
             Choose
         </button>
     </div>
@@ -94,7 +100,7 @@
     <div class="plan">
         <h3>Plus</h3>
         <p>$9.99/month</p>
-        <button onclick="selectPlan('plus')">
+        <button type="button" onclick="selectPlan('plus')">
             Choose
         </button>
     </div>
@@ -102,13 +108,22 @@
     <div class="plan ai">
         <h3>AI Coach</h3>
         <p>$19.99/month</p>
-        <button onclick="selectPlan('ai')">
+        <button type="button" onclick="selectPlan('ai')">
             Choose
         </button>
     </div>
 </section>
 
 <script src="app.js"></script>
+<script>
+if ('serviceWorker' in navigator) {
+    window.addEventListener('load', () => {
+        navigator.serviceWorker.register('./sw.js').catch(error => {
+            console.warn('BiteFact service worker registration failed:', error);
+        });
+    });
+}
+</script>
 
 </body>
 </html>

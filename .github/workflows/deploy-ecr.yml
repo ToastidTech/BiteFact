@@ -22,17 +22,37 @@ jobs:
       - name: Check out repository
         uses: actions/checkout@v4
 
-      - name: Debug OIDC claims
-        uses: actions/github-script@v7
+      - name: Set up Node.js
+        uses: actions/setup-node@v4
         with:
-          script: |
-            const token = await core.getIDToken('sts.amazonaws.com');
-            const payload = JSON.parse(
-              Buffer.from(token.split('.')[1], 'base64url').toString()
-            );
-            console.log('OIDC issuer:', payload.iss);
-            console.log('OIDC audience:', payload.aud);
-            console.log('OIDC subject:', payload.sub);
+          node-version: 22
+          cache: npm
+
+      - name: Install dependencies
+        run: npm install --omit=dev
+
+      - name: Validate JavaScript syntax
+        run: |
+          node --check server.js
+          node --check app.js
+          node --check sw.js
+          node --check plans.js
+          node --check permissions.js
+
+      - name: Run backend health check
+        run: |
+          node server.js > /tmp/bitefact-server.log 2>&1 &
+          SERVER_PID=$!
+          trap 'kill $SERVER_PID' EXIT
+          for i in {1..20}; do
+            if curl --fail --silent http://127.0.0.1:8080/health; then
+              echo
+              exit 0
+            fi
+            sleep 1
+          done
+          cat /tmp/bitefact-server.log
+          exit 1
 
       - name: Configure AWS credentials
         uses: aws-actions/configure-aws-credentials@v4
