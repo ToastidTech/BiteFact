@@ -12,21 +12,14 @@
     --shadow: 0 18px 50px rgba(0, 0, 0, 0.35);
 }
 
-* {
-    box-sizing: border-box;
-}
-
-html {
-    scroll-behavior: smooth;
-}
+* { box-sizing: border-box; }
+html { scroll-behavior: smooth; }
 
 body {
     margin: 0;
     padding: 20px;
     font-family: Arial, Helvetica, sans-serif;
-    background:
-        radial-gradient(circle at top, rgba(58, 160, 255, 0.18), transparent 30%),
-        linear-gradient(180deg, #05070c 0%, var(--bg) 100%);
+    background: radial-gradient(circle at top, rgba(58, 160, 255, 0.18), transparent 30%), linear-gradient(180deg, #05070c 0%, var(--bg) 100%);
     color: var(--text);
     min-height: 100vh;
 }
@@ -36,9 +29,7 @@ body::before {
     position: fixed;
     inset: 0;
     pointer-events: none;
-    background-image:
-        linear-gradient(rgba(255,255,255,0.035) 1px, transparent 1px),
-        linear-gradient(90deg, rgba(255,255,255,0.035) 1px, transparent 1px);
+    background-image: linear-gradient(rgba(255,255,255,0.035) 1px, transparent 1px), linear-gradient(90deg, rgba(255,255,255,0.035) 1px, transparent 1px);
     background-size: 28px 28px;
     mask-image: linear-gradient(180deg, rgba(0,0,0,0.75), transparent 90%);
 }
@@ -67,30 +58,28 @@ header.app-header {
     background: rgba(255,255,255,0.03);
 }
 
-header h1 {
-    margin: 0;
-    font-size: 2rem;
-    letter-spacing: 0.2px;
+.app-status {
+    display: inline-block;
+    margin-bottom: 5px;
+    padding: 4px 8px;
+    border: 1px solid rgba(103, 214, 255, 0.3);
+    border-radius: 999px;
+    color: var(--accent-2);
+    font-size: 0.67rem;
+    font-weight: 800;
+    letter-spacing: 1.1px;
 }
 
-header p {
-    margin: 4px 0 0;
-    color: var(--muted);
-}
-
-section {
-    max-width: 1100px;
-    margin: 14px auto;
-}
+header h1 { margin: 0; font-size: 2rem; letter-spacing: 0.2px; }
+header p { margin: 4px 0 0; color: var(--muted); }
+section { max-width: 1100px; margin: 14px auto; }
 
 .disclaimer-banner,
-.trial-card,
 .coach-card,
 .coach,
 .meal-box,
 .plans,
-.card,
-.plan {
+.card {
     background: var(--panel);
     border: 1px solid var(--panel-border);
     border-radius: var(--radius);
@@ -98,42 +87,12 @@ section {
     backdrop-filter: blur(12px);
 }
 
-.disclaimer-banner {
-    padding: 14px 18px;
-    color: var(--muted);
-    line-height: 1.5;
-}
-
-.disclaimer-banner strong {
-    color: var(--text);
-}
-
-.trial-card,
-.coach-card,
-.coach,
-.meal-box,
-.plans {
-    padding: 20px;
-}
-
-.trial-card h2,
-.coach-card h2,
-.coach h2,
-.meal-box h2,
-.plans h2 {
-    margin-top: 0;
-}
-
-.coach-card {
-    display: grid;
-    gap: 10px;
-}
-
-.coach-note {
-    margin: 0;
-    color: var(--muted);
-    line-height: 1.5;
-}
+.disclaimer-banner { padding: 14px 18px; color: var(--muted); line-height: 1.5; }
+.disclaimer-banner strong { color: var(--text); }
+.coach-card, .coach, .meal-box, .plans { padding: 20px; }
+.coach-card h2, .coach h2, .meal-box h2 { margin-top: 0; }
+.coach-card { display: grid; gap: 10px; }
+.coach-note { margin: 0; color: var(--muted); line-height: 1.5; }
 
 .dashboard {
     display: grid;
@@ -143,28 +102,10 @@ section {
     margin: 14px auto;
 }
 
-.card,
-.plan {
-    padding: 18px;
-}
-
-.card h3,
-.plan h3 {
-    margin-top: 0;
-    margin-bottom: 10px;
-}
-
-.card p {
-    margin: 0;
-    font-size: 1.7rem;
-    font-weight: 700;
-    color: var(--accent-2);
-}
-
-.meal-box {
-    display: grid;
-    gap: 12px;
-}
+.card { padding: 18px; }
+.card h3 { margin-top: 0; margin-bottom: 10px; }
+.card p { margin: 0; font-size: 1.7rem; font-weight: 700; color: var(--accent-2); }
+.meal-box { display: grid; gap: 12px; }
 
 input {
     width: 100%;
@@ -175,15 +116,8 @@ input {
     color: var(--text);
     outline: none;
 }
-
-input::placeholder {
-    color: #8ea4bf;
-}
-
-input:focus {
-    border-color: rgba(103, 214, 255, 0.55);
-    box-shadow: 0 0 0 3px rgba(58, 160, 255, 0.14);
-}
+input::placeholder { color: #8ea4bf; }
+input:focus { border-color: rgba(103, 214, 255, 0.55); box-shadow: 0 0 0 3px rgba(58, 160, 255, 0.14); }
 
 button {
     appearance: none;
@@ -197,65 +131,50 @@ button {
     box-shadow: 0 10px 24px rgba(58, 160, 255, 0.22);
     transition: transform 0.15s ease, filter 0.15s ease, box-shadow 0.15s ease;
 }
+button:hover { transform: translateY(-1px); filter: brightness(1.04); box-shadow: 0 14px 28px rgba(58, 160, 255, 0.28); }
+button:active { transform: translateY(0); }
+.camera-button { width: fit-content; }
 
-button:hover {
-    transform: translateY(-1px);
-    filter: brightness(1.04);
-    box-shadow: 0 14px 28px rgba(58, 160, 255, 0.28);
-}
+.plans { display: grid; gap: 14px; }
+.plans-header { display: flex; align-items: center; justify-content: space-between; gap: 16px; }
+.plans-header h2 { margin: 3px 0 0; }
+.section-kicker { color: var(--accent-2); font-size: 0.68rem; font-weight: 800; letter-spacing: 1.2px; text-transform: uppercase; }
+.current-plan { padding: 7px 11px; border: 1px solid rgba(103, 214, 255, 0.28); border-radius: 999px; color: var(--accent-2); font-size: 0.76rem; font-weight: 800; white-space: nowrap; }
+.plan-options { display: flex; align-items: center; justify-content: space-between; gap: 18px; padding: 16px; border: 1px solid rgba(103, 214, 255, 0.13); border-radius: 16px; background: rgba(255,255,255,0.025); }
+.plan-option-copy { display: grid; gap: 4px; }
+.plan-option-copy strong { font-size: 1rem; }
+.plan-option-copy span { color: var(--muted); font-size: 0.86rem; }
+.plan-actions { display: flex; gap: 9px; flex-wrap: wrap; justify-content: flex-end; }
+.secondary-plan-button { color: var(--text); background: transparent; border: 1px solid rgba(103, 214, 255, 0.3); box-shadow: none; }
+.secondary-plan-button:hover { background: rgba(103, 214, 255, 0.08); box-shadow: none; }
+.plan-thank-you { width: 100%; text-align: center; padding: 8px 4px; color: var(--accent-2); }
 
-button:active {
-    transform: translateY(0);
-}
+.bitefact-ai-result { margin-top: 4px; padding: 16px; border: 1px solid rgba(103, 214, 255, 0.18); border-radius: 16px; background: rgba(7, 11, 18, 0.62); }
+.bitefact-ai-result.success { border-color: rgba(103, 214, 255, 0.35); }
+.bitefact-ai-result.error { border-color: rgba(255, 107, 107, 0.28); }
+.result-title-row { display: flex; align-items: center; justify-content: space-between; gap: 12px; }
+.result-title-row h3 { margin: 0; }
+.result-badge { padding: 4px 7px; border-radius: 999px; background: rgba(103, 214, 255, 0.1); color: var(--accent-2); font-size: 0.62rem; font-weight: 800; letter-spacing: 0.8px; }
+.bitefact-ai-result label { display: grid; gap: 6px; margin: 14px 0; color: var(--muted); font-size: 0.8rem; }
+.result-grid { display: grid; grid-template-columns: repeat(4, 1fr); gap: 8px; margin: 12px 0; }
+.result-grid div { padding: 10px; border-radius: 12px; background: rgba(255,255,255,0.035); }
+.result-grid span { display: block; color: var(--muted); font-size: 0.72rem; }
+.result-grid strong { display: block; margin-top: 4px; font-size: 1.1rem; color: var(--accent-2); }
+.result-detail, .result-notes { color: var(--muted); font-size: 0.78rem; }
+.result-notes { margin-bottom: 14px; }
 
-.camera-button {
-    width: fit-content;
-}
-
-.plans {
-    display: grid;
-    gap: 14px;
-}
-
-.plans > div {
-    display: grid;
-    gap: 10px;
-}
-
-.plan.ai {
-    border-color: rgba(103, 214, 255, 0.45);
-}
-
-.plan p {
-    margin: 0;
-    color: var(--muted);
-}
-
-#trialStatus,
-#coachMessage,
-#cameraNote {
-    line-height: 1.55;
+@media (max-width: 720px) {
+    .plan-options { align-items: stretch; flex-direction: column; }
+    .plan-actions { justify-content: stretch; width: 100%; }
+    .plan-actions button { flex: 1 1 100%; }
+    .result-grid { grid-template-columns: repeat(2, 1fr); }
 }
 
 @media (max-width: 640px) {
-    body {
-        padding: 14px;
-    }
-
-    header.app-header {
-        padding: 14px;
-    }
-
-    .app-logo {
-        width: 52px;
-        height: 52px;
-    }
-
-    header h1 {
-        font-size: 1.55rem;
-    }
-
-    .card p {
-        font-size: 1.45rem;
-    }
+    body { padding: 14px; }
+    header.app-header { padding: 14px; }
+    .app-logo { width: 52px; height: 52px; }
+    header h1 { font-size: 1.55rem; }
+    .card p { font-size: 1.45rem; }
+    .plans-header { align-items: flex-start; }
 }
