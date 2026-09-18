@@ -29,7 +29,7 @@ const plans = {
 
         name: "Plus",
 
-        price: 9.99,
+        price: 12.99,
 
         features: {
 
