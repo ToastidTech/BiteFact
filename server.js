@@ -153,7 +153,7 @@ async function analyzeWithPerplexity(body) {
     }
   };
 
-  const response = await fetch("https://api.perplexity.ai/v1/sonar", {
+  const response = await fetch("https://api.perplexity.ai/chat/completions", {
     method: "POST",
     headers: {
       Authorization: `Bearer ${apiKey}`,
