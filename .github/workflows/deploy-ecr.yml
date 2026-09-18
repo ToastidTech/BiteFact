@@ -13,8 +13,8 @@ permissions:
 env:
   AWS_REGION: us-west-2
   ECR_REPOSITORY: bitefact
-  # Set to the BiteFact ECS Express service ARN once it is created (e.g. arn:aws:ecs:us-west-2:299113402161:service/default/bitefact-xxxx)
-  EXPRESS_SERVICE_ARN: REPLACE_WITH_BITEFACT_EXPRESS_SERVICE_ARN
+  # BiteFact ECS Express service ARN
+  EXPRESS_SERVICE_ARN: arn:aws:ecs:us-west-2:299113402161:service/default/BiteFact
 
 jobs:
   build-and-push:
