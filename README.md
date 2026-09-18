@@ -6,7 +6,7 @@ AI-powered nutrition tracking PWA for Toastid Tech.
 
 BiteFact is AWS-first and no longer uses AWS Lambda for food-photo analysis.
 
-The PWA calls `/api/bitefact-ai-analyze` on the BiteFact/Toastid Cloud backend. The backend runs as a standard Node.js service in an AWS container environment and calls the Perplexity Sonar API. The Perplexity API key stays server-side and is never shipped to the browser.
+The PWA calls `/api/bitefact-ai-analyze` on the BiteFact/Toastid Cloud backend. The backend runs as a standard Node.js service in an AWS container environment and calls the Anthropic Messages API. The Anthropic API key stays server-side and is never shipped to the browser.
 
 ### Toastid Cloud direction
 
@@ -15,7 +15,7 @@ BiteFact is the first application being structured around the future Toastid Clo
 ### Required server environment variables
 
 ```text
-PERPLEXITY_API_KEY=your_perplexity_api_key
+ANTHROPIC_API_KEY=<your-anthropic-key>
 ```
 
 Optional production CORS restriction when the frontend and API use different origins:
@@ -38,7 +38,7 @@ AWS containerized Node.js backend
 Toastid Cloud API boundary
     |
     v
-Perplexity Sonar API
+Anthropic Messages API
 ```
 
 This intentionally avoids Lambda so BiteFact can grow into a reusable Toastid Cloud service layer.
@@ -48,8 +48,8 @@ This intentionally avoids Lambda so BiteFact can grow into a reusable Toastid Cl
 1. User taps **Use Camera**.
 2. BiteFact captures the photo.
 3. The browser resizes it to a maximum 1600px dimension and converts it to JPEG before upload.
-4. The AWS-hosted backend sends the image to Perplexity Sonar Pro.
-5. Perplexity returns structured nutrition data.
+4. The AWS-hosted backend sends the image to Anthropic (Claude).
+5. Anthropic returns structured nutrition data.
 6. BiteFact displays the estimate for user verification.
 7. Nothing is added to the daily totals until the user taps **Verify & Log**.
 

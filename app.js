@@ -1,5 +1,5 @@
 // BiteFact AI endpoint.
-// The Perplexity key stays server-side in the Node.js backend (server.js).
+// The Anthropic key stays server-side in the Node.js backend (server.js).
 // The frontend can be hosted with the backend or pointed at a deployed backend URL.
 const AI_API_URL = window.BITEFACT_API_URL || "/api/bitefact-ai-analyze";
 

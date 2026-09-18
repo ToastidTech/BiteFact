@@ -4,9 +4,9 @@ BiteFact is intentionally deployed as a containerized Node/Express service.
 
 ## Runtime flow
 
-BiteFact PWA → `/api/bitefact-ai-analyze` → Express backend → Perplexity API
+BiteFact PWA → `/api/bitefact-ai-analyze` → Express backend → Anthropic Messages API
 
-The Perplexity API key must remain server-side as `PERPLEXITY_API_KEY`.
+The Anthropic API key must remain server-side as `ANTHROPIC_API_KEY`.
 
 ## AWS direction
 
@@ -18,4 +18,4 @@ BiteFact should remain a discrete service so it can later sit behind a shared To
 
 ## Important
 
-Do not place `PERPLEXITY_API_KEY` in browser JavaScript, HTML, the PWA manifest, or any public repository file.
+Do not place `ANTHROPIC_API_KEY` in browser JavaScript, HTML, the PWA manifest, or any public repository file.

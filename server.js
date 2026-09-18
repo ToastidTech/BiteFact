@@ -93,10 +93,10 @@ Fat entered: ${Number(body.fat) || 0} g
 Return ONLY the structured JSON requested by the schema. Preserve the user's entered nutrition values when they are provided, and provide a concise coach note in notes.`;
 }
 
-async function analyzeWithPerplexity(body) {
-  const apiKey = process.env.PERPLEXITY_API_KEY;
+async function analyzeWithAnthropic(body) {
+  const apiKey = process.env.ANTHROPIC_API_KEY;
   if (!apiKey) {
-    const error = new Error("Perplexity API is not configured on the server.");
+    const error = new Error("Anthropic API is not configured on the server.");
     error.status = 500;
     throw error;
   }
@@ -113,76 +113,89 @@ async function analyzeWithPerplexity(body) {
     throw error;
   }
 
-  const messageContent = [
-    {
-      type: "text",
-      text: buildPrompt(body)
-    }
-  ];
+  const messageContent = [];
 
   if (body.image) {
+    const dataUri = extractImageData(body.image);
+    const mediaType = dataUri
+      .slice(5, dataUri.indexOf(";"))
+      .toLowerCase()
+      .replace("image/jpg", "image/jpeg");
     messageContent.push({
-      type: "image_url",
-      image_url: { url: body.image }
+      type: "image",
+      source: {
+        type: "base64",
+        media_type: mediaType,
+        data: dataUri.slice(dataUri.indexOf(",") + 1)
+      }
     });
   }
 
-  const perplexityRequest = {
-    model: "sonar-pro",
-    stream: false,
-    disable_search: true,
+  messageContent.push({
+    type: "text",
+    text: buildPrompt(body)
+  });
+
+  const systemPrompt = `You are BiteFact's nutrition estimation engine. Be conservative, transparent, and consistent. Nutrition values are estimates, not medical advice.
+
+Respond with ONLY a raw JSON object matching this schema, with no markdown code fences and no commentary:
+${JSON.stringify(nutritionSchema)}`;
+
+  const anthropicRequest = {
+    model: process.env.BITEFACT_MODEL || "claude-opus-4-8",
+    max_tokens: 1000,
     temperature: 0.1,
-    max_tokens: 500,
+    system: systemPrompt,
     messages: [
-      {
-        role: "system",
-        content:
-          "You are BiteFact's nutrition estimation engine. Be conservative, transparent, and consistent. Nutrition values are estimates, not medical advice."
-      },
       {
         role: "user",
         content: messageContent
       }
-    ],
-    response_format: {
-      type: "json_schema",
-      json_schema: {
-        name: "bitefact_nutrition",
-        schema: nutritionSchema
-      }
-    }
+    ]
   };
 
-  const response = await fetch("https://api.perplexity.ai/chat/completions", {
+  const response = await fetch("https://api.anthropic.com/v1/messages", {
     method: "POST",
     headers: {
-      Authorization: `Bearer ${apiKey}`,
-      "Content-Type": "application/json"
+      "Content-Type": "application/json",
+      "x-api-key": apiKey,
+      "anthropic-version": "2023-06-01"
     },
-    body: JSON.stringify(perplexityRequest)
+    body: JSON.stringify(anthropicRequest)
   });
 
   const raw = await response.json().catch(() => ({}));
 
   if (!response.ok) {
-    console.error("Perplexity API error:", response.status, raw);
+    const providerMessage = raw?.error?.message || `HTTP ${response.status}`;
+    console.error("Anthropic API error:", response.status, providerMessage);
     const error = new Error("BiteFact AI could not analyze the meal right now.");
     error.status = 502;
     throw error;
   }
 
-  const content = raw?.choices?.[0]?.message?.content;
-  if (!content) {
+  const textBlock = Array.isArray(raw?.content)
+    ? raw.content.find(
+        (block) => block && block.type === "text" && typeof block.text === "string"
+      )
+    : null;
+
+  if (!textBlock || !textBlock.text.trim()) {
     const error = new Error("BiteFact AI returned an empty result.");
     error.status = 502;
     throw error;
   }
 
+  const cleaned = textBlock.text
+    .trim()
+    .replace(/^```(?:json)?\s*/i, "")
+    .replace(/\s*```$/, "");
+
   let result;
   try {
-    result = typeof content === "string" ? JSON.parse(content) : content;
+    result = JSON.parse(cleaned);
   } catch (error) {
-    console.error("Invalid structured response from Perplexity:", content);
+    console.error("Invalid JSON response from Anthropic:", textBlock.text.slice(0, 500));
     const parseError = new Error("BiteFact AI returned an unreadable nutrition result.");
     parseError.status = 502;
     throw parseError;
@@ -207,7 +220,7 @@ app.options("/api/bitefact-ai-analyze", (req, res) => {
 
 app.post("/api/bitefact-ai-analyze", async (req, res) => {
   try {
-    const result = await analyzeWithPerplexity(req.body || {});
+    const result = await analyzeWithAnthropic(req.body || {});
     return send(res, 200, result);
   } catch (error) {
     console.error("BiteFact AI error:", error);
