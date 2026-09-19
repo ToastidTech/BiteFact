@@ -168,7 +168,7 @@ ${JSON.stringify(nutritionSchema)}`;
   if (!response.ok) {
     const providerMessage = raw?.error?.message || `HTTP ${response.status}`;
     console.error("Anthropic API error:", response.status, providerMessage);
-    const error = new Error("BiteFact AI could not analyze the meal right now. (Anthropic " + response.status + ": " + providerMessage + ")");
+    const error = new Error("BiteFact AI could not analyze the meal right now.");
     error.status = 502;
     throw error;
   }
