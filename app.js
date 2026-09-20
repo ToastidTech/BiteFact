@@ -141,6 +141,23 @@ async function addMeal() {
     await analyzeMealWithAI(meal);
 }
 
+/* =========================
+   VIEWS
+   ========================= */
+
+function showUpgradeView() {
+    document.getElementById("view-dashboard").hidden = true;
+    document.getElementById("view-upgrade").hidden = false;
+    window.scrollTo(0, 0);
+    updatePlanUI();
+}
+
+function showDashboardView() {
+    document.getElementById("view-upgrade").hidden = true;
+    document.getElementById("view-dashboard").hidden = false;
+    window.scrollTo(0, 0);
+}
+
 function trialIsActive() {
     return typeof window.bitefactTrialActive === "function" && window.bitefactTrialActive();
 }
@@ -194,9 +211,9 @@ function updatePlanUI() {
     if (!currentPlan || !options) return;
 
     const labels = {
-        free: "BiteFact Free",
-        plus: "BiteFact Plus",
-        ai: "BiteFact AI"
+        free: "Current Plan: Free",
+        plus: "Current Plan: Plus",
+        ai: "Current Plan: AI"
     };
 
     currentPlan.textContent = labels[user.plan] + (trialIsActive() && user.plan === "free" ? ` (Trial: ${trialDaysLeft()}d left)` : "");
@@ -212,13 +229,13 @@ function updatePlanUI() {
                 <div class="plan-card">
                     <strong>BiteFact Plus</strong>
                     <span class="plan-price">$12.99/mo</span>
-                    <span class="plan-desc">Manual logging, macro tracking, advanced reports, meal planning.</span>
+                    <span class="plan-desc">Manual nutrition entry with calorie &amp; macro tracking and daily totals.</span>
                     <div class="bitefact-paypal-wrap"><div id="bitefact-paypal-plus"></div></div>
                 </div>
                 <div class="plan-card">
                     <strong>BiteFact AI</strong>
                     <span class="plan-price">$19.99/mo</span>
-                    <span class="plan-desc">Everything in Plus, plus AI coach and the photo plate scanner.</span>
+                    <span class="plan-desc">Everything in Plus, plus the AI photo plate scanner and AI nutrition insights.</span>
                     <div class="bitefact-paypal-wrap"><div id="bitefact-paypal-ai"></div></div>
                 </div>
             </div>
@@ -239,7 +256,7 @@ function updatePlanUI() {
                 <div class="plan-card">
                     <strong>BiteFact AI</strong>
                     <span class="plan-price">$19.99/mo</span>
-                    <span class="plan-desc">Add the AI coach and photo plate scanner.</span>
+                    <span class="plan-desc">Add the AI photo plate scanner and AI nutrition insights.</span>
                     <div class="bitefact-paypal-wrap"><div id="bitefact-paypal-ai"></div></div>
                 </div>
             </div>
@@ -463,11 +480,31 @@ function logAIResult() {
     window.bitefactAIResult = null;
 }
 
+const GOALS = { calories: 2200, protein: 160, carbs: 220, fat: 70 };
+const RING_CIRCUMFERENCE = 2 * Math.PI * 84;
+
+function setMacro(name, value, goal) {
+    const val = document.getElementById(name);
+    if (val) val.textContent = `${Math.round(value)}g / ${goal}g`;
+    const bar = document.getElementById(name + "Bar");
+    if (bar) bar.style.width = `${Math.min((value / goal) * 100, 100)}%`;
+}
+
 function updateDashboard() {
-    document.getElementById("calories").innerHTML = `${user.calories} / 2200`;
-    document.getElementById("protein").innerHTML = `${user.protein}g / 160g`;
-    document.getElementById("carbs").innerHTML = `${user.carbs}g / 220g`;
-    document.getElementById("fat").innerHTML = `${user.fat}g / 70g`;
+    const calPct = Math.min(user.calories / GOALS.calories, 1);
+
+    const ring = document.getElementById("ringProgress");
+    if (ring) ring.style.strokeDashoffset = String(RING_CIRCUMFERENCE * (1 - calPct));
+
+    const calEl = document.getElementById("calories");
+    if (calEl) calEl.textContent = Math.round(user.calories).toLocaleString("en-US");
+
+    const caption = document.getElementById("ringCaption");
+    if (caption) caption.textContent = `Daily calories — ${Math.round(calPct * 100)}% of goal`;
+
+    setMacro("protein", user.protein, GOALS.protein);
+    setMacro("carbs", user.carbs, GOALS.carbs);
+    setMacro("fat", user.fat, GOALS.fat);
 }
 
 function escapeHtml(value) {

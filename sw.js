@@ -1,4 +1,4 @@
-const CACHE_NAME = "bitefact-v12";
+const CACHE_NAME = "bitefact-v13";
 
 const CORE_FILES = [
   "./",
@@ -10,7 +10,8 @@ const CORE_FILES = [
   "lead-capture.js",
   "manifest.json",
   "assets/logo.png",
-  "assets/button-logo.png"
+  "assets/button-logo.png",
+  "assets/bitefact-ai-logo.jpg"
 ];
 
 self.addEventListener("install", event => {

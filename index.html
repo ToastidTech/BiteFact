@@ -18,77 +18,98 @@
 
 <body>
 
-<header class="app-header">
-    <img class="app-logo" src="assets/logo.png" alt="BiteFact logo">
-    <div>
-        <div class="app-status">IN DEVELOPMENT / TESTING</div>
-        <h1>BiteFact</h1>
-        <p>Your AI Nutrition Coach</p>
-    </div>
+<header class="brand-header">
+    <img class="brand-logo" src="assets/bitefact-ai-logo.jpg" alt="BiteFact AI logo">
+    <span class="plan-pill" id="currentPlan">Current Plan: Free</span>
 </header>
 
-<section class="disclaimer-banner" aria-label="Nutrition disclaimer">
-    <strong>Estimate only:</strong> calories, macros, and AI insights are approximations, not medical advice, and may not be exact.
-</section>
+<main class="app-main">
 
-<section class="coach-card">
-    <h2>🤖 BiteFact AI</h2>
-    <p>Take a photo of your meal to estimate calories and macros. Review the estimate before saving it to your daily totals.</p>
-    <button type="button" class="camera-button" onclick="openCameraGuide(event)">Use Camera</button>
-    <p class="coach-note" id="cameraNote">Camera scans estimate portions and macros. You always stay in control.</p>
-</section>
+    <!-- ============ DASHBOARD VIEW ============ -->
+    <section id="view-dashboard" class="view">
+        <section class="ring-card" aria-label="Daily nutrition progress">
+            <div class="ring-wrap">
+                <svg viewBox="0 0 200 200" class="calorie-ring" role="img" aria-label="Daily calorie progress">
+                    <defs>
+                        <linearGradient id="ringGradient" x1="0%" y1="0%" x2="100%" y2="100%">
+                            <stop offset="0%" stop-color="#67d6ff"/>
+                            <stop offset="100%" stop-color="#2f7dff"/>
+                        </linearGradient>
+                    </defs>
+                    <circle cx="100" cy="100" r="84" class="ring-track"></circle>
+                    <circle cx="100" cy="100" r="84" class="ring-progress" id="ringProgress"></circle>
+                </svg>
+                <div class="ring-center">
+                    <span class="ring-value" id="calories">0</span>
+                    <span class="ring-unit">kcal</span>
+                    <span class="ring-goal">of 2,200 kcal</span>
+                </div>
+            </div>
+            <p class="ring-caption" id="ringCaption">Daily calories</p>
 
-<section class="dashboard">
-    <div class="card">
-        <h3>Calories</h3>
-        <p id="calories">0 / 2200</p>
-    </div>
+            <div class="macros">
+                <h3>Macros</h3>
+                <div class="macro-row">
+                    <div class="macro-label"><span>Protein</span><span id="protein">0g / 160g</span></div>
+                    <div class="macro-bar"><div class="macro-fill" id="proteinBar"></div></div>
+                </div>
+                <div class="macro-row">
+                    <div class="macro-label"><span>Carbs</span><span id="carbs">0g / 220g</span></div>
+                    <div class="macro-bar"><div class="macro-fill" id="carbsBar"></div></div>
+                </div>
+                <div class="macro-row">
+                    <div class="macro-label"><span>Fat</span><span id="fat">0g / 70g</span></div>
+                    <div class="macro-bar"><div class="macro-fill" id="fatBar"></div></div>
+                </div>
+            </div>
 
-    <div class="card">
-        <h3>Protein</h3>
-        <p id="protein">0g / 160g</p>
-    </div>
+            <button type="button" class="upgrade-cta" onclick="showUpgradeView()">Upgrade</button>
+            <button type="button" class="clear-totals-button" onclick="clearDailyTotals()">Clear today's totals</button>
+        </section>
 
-    <div class="card">
-        <h3>Carbs</h3>
-        <p id="carbs">0g / 220g</p>
-    </div>
+        <section class="coach-card">
+            <h2>🤖 BiteFact AI</h2>
+            <p>Take a photo of your meal to estimate calories and macros. Review the estimate before saving it to your daily totals.</p>
+            <button type="button" class="camera-button" onclick="openCameraGuide(event)">Use Camera</button>
+            <p class="coach-note" id="cameraNote">Camera scans estimate portions and macros. You always stay in control.</p>
+        </section>
 
-    <div class="card">
-        <h3>Fat</h3>
-        <p id="fat">0g / 70g</p>
-    </div>
+        <section class="meal-box">
+            <h2>Add Meal</h2>
 
-    <button type="button" class="clear-totals-button" onclick="clearDailyTotals()">Clear today's totals</button>
-</section>
+            <input id="foodName" placeholder="Food item">
+            <input id="foodCalories" type="number" placeholder="Calories">
+            <input id="foodProtein" type="number" placeholder="Protein grams">
+            <input id="foodCarbs" type="number" placeholder="Carbs grams">
+            <input id="foodFat" type="number" placeholder="Fat grams">
 
-<section class="meal-box">
-    <h2>Add Meal</h2>
+            <button type="button" onclick="addMeal()">Add Meal</button>
+        </section>
 
-    <input id="foodName" placeholder="Food item">
-    <input id="foodCalories" type="number" placeholder="Calories">
-    <input id="foodProtein" type="number" placeholder="Protein grams">
-    <input id="foodCarbs" type="number" placeholder="Carbs grams">
-    <input id="foodFat" type="number" placeholder="Fat grams">
+        <section class="coach">
+            <h2>🤖 Coach Insight</h2>
+            <p id="coachMessage">Welcome to BiteFact. Start by photographing a meal or logging one manually.</p>
+        </section>
 
-    <button type="button" onclick="addMeal()">Add Meal</button>
-</section>
+        <section class="disclaimer-banner" aria-label="Nutrition disclaimer">
+            <strong>Estimate only:</strong> calories, macros, and AI insights are approximations, not medical advice, and may not be exact.
+        </section>
+    </section>
 
-<section class="coach">
-    <h2>🤖 Coach Insight</h2>
-    <p id="coachMessage">Welcome to BiteFact. Start by photographing a meal or logging one manually.</p>
-</section>
-
-<section class="plans">
-    <div class="plans-header">
-        <div>
+    <!-- ============ UPGRADE VIEW ============ -->
+    <section id="view-upgrade" class="view" hidden>
+        <button type="button" class="back-button" onclick="showDashboardView()">← Back</button>
+        <div class="upgrade-head">
             <div class="section-kicker">Membership</div>
-            <h2>Your BiteFact Plan</h2>
+            <h2>Upgrade</h2>
+            <p>Unlock more of BiteFact.</p>
         </div>
-        <span class="current-plan" id="currentPlan">Free</span>
-    </div>
-    <div id="planOptions" class="plan-options"></div>
-</section>
+        <div id="planOptions" class="plan-options"></div>
+    </section>
+
+</main>
+
+<footer class="app-footer">Powered by Toastid Tech</footer>
 
 <script src="lead-capture.js"></script>
 <script src="app.js"></script>
