@@ -1,4 +1,5 @@
 const express = require("express");
+const crypto = require("crypto");
 const fs = require("fs");
 const path = require("path");
 
@@ -298,11 +299,14 @@ async function hubspotBiteFactRequest(method, url, properties, retriedWithoutSou
   });
   if (response.ok) return response.json().catch(() => ({}));
   const errText = await response.text().catch(() => "");
-  // If HubSpot rejects our custom bitefact_source property (it doesn't exist in
+  // If HubSpot rejects one of our custom source properties (it doesn't exist in
   // the portal), retry once without it instead of failing the whole sync.
-  if (!retriedWithoutSource && response.status === 400 && /bitefact_source/i.test(errText) && properties.bitefact_source !== undefined) {
-    console.warn("HubSpot rejected the bitefact_source property (probably missing in portal); retrying without it.");
-    const { bitefact_source: _dropped, ...rest } = properties;
+  const rejectedSourceProp = ["bitefact_source", "toastidready_source"].find(
+    (p) => properties[p] !== undefined && new RegExp(p, "i").test(errText)
+  );
+  if (!retriedWithoutSource && response.status === 400 && rejectedSourceProp) {
+    console.warn(`HubSpot rejected the ${rejectedSourceProp} property (probably missing in portal); retrying without it.`);
+    const { [rejectedSourceProp]: _dropped, ...rest } = properties;
     return hubspotBiteFactRequest(method, url, rest, true);
   }
 
@@ -472,8 +476,84 @@ function checkToastidReadyRateLimit(ip) {
   return { allowed: true };
 }
 
-function validateToastidReadyLead(body) {
-  const name = typeof body?.name === "string" ? body.name.trim() : "";
+/* ── ToastidReady entitlement tokens ──────────────────────────
+   The 5-free-SOP counter lives HERE, not in the browser. Each lead
+   (or anonymous skip) gets an unguessable token; every generate call
+   must present it and the server decrements the free balance.
+   Clearing browser storage cannot mint new free generations.      */
+const TR_FREE_LIMIT = 5;
+const TR_TOKENS_FILE = process.env.TOASTIDREADY_TOKENS_FILE || path.join(__dirname, "data", "toastidready-tokens.json");
+const TR_ANON_TOKEN_WINDOW_MS = 24 * 60 * 60 * 1000;
+const TR_ANON_TOKEN_MAX_PER_IP = 3;
+const trAnonTokenLog = new Map();
+let trTokens = null; // token -> { email, freeUsed, paid, createdAt, ip }
+
+async function loadToastidReadyTokens() {
+  if (trTokens) return trTokens;
+  trTokens = new Map();
+  try {
+    const raw = await fs.promises.readFile(TR_TOKENS_FILE, "utf8");
+    const obj = JSON.parse(raw);
+    for (const [k, v] of Object.entries(obj || {})) {
+      if (v && typeof v === "object") trTokens.set(k, v);
+    }
+  } catch (e) { /* no store yet — start empty */ }
+  return trTokens;
+}
+
+async function saveToastidReadyTokens() {
+  const obj = Object.fromEntries(trTokens);
+  const tmp = TR_TOKENS_FILE + ".tmp";
+  await fs.promises.mkdir(path.dirname(TR_TOKENS_FILE), { recursive: true });
+  await fs.promises.writeFile(tmp, JSON.stringify(obj), "utf8");
+  await fs.promises.rename(tmp, TR_TOKENS_FILE);
+}
+
+function newToastidReadyToken() {
+  return "tr_" + crypto.randomBytes(24).toString("hex");
+}
+
+async function getOrCreateToastidReadyToken({ email, ip }) {
+  const tokens = await loadToastidReadyTokens();
+  if (email) {
+    for (const [tok, rec] of tokens) {
+      if (rec.email === email) return tok; // same email → same token, no fresh 5
+    }
+  }
+  const token = newToastidReadyToken();
+  tokens.set(token, {
+    email: email || null,
+    freeUsed: 0,
+    paid: false,
+    createdAt: new Date().toISOString(),
+    ip: ip || null
+  });
+  await saveToastidReadyTokens();
+  return token;
+}
+
+// Anonymous tokens (lead-capture skips) are capped per IP per day so one
+// device can't mint unlimited 5-packs.
+function checkAnonTokenRateLimit(ip) {
+  const now = Date.now();
+  const entry = trAnonTokenLog.get(ip);
+  if (!entry || now - entry.windowStart > TR_ANON_TOKEN_WINDOW_MS) {
+    trAnonTokenLog.set(ip, { windowStart: now, count: 1 });
+    return true;
+  }
+  entry.count += 1;
+  return entry.count <= TR_ANON_TOKEN_MAX_PER_IP;
+}
+
+function getToastidReadyToken(req) {
+  const body = req.body || {};
+  if (typeof body.token === "string" && body.token) return body.token;
+  const h = req.headers["x-toastidready-token"];
+  if (typeof h === "string" && h) return h;
+  return null;
+}
+
+function validateToastidReadyLead(body) {  const name = typeof body?.name === "string" ? body.name.trim() : "";
   const email = typeof body?.email === "string" ? body.email.trim().toLowerCase() : "";
   if (!name || name.length > 120) return null;
   if (!email || email.length > 254 || !/^(\S+@\S+\.\S+)$/.test(email)) return null;
@@ -541,6 +621,21 @@ app.post("/api/toastidready-generate", async (req, res) => {
   if (!rate.allowed) {
     return send(res, 429, { error: "Too Many Requests", retryAfter: rate.retryAfter });
   }
+  // Server-side entitlement: every generate call must present a token.
+  // The free-generation counter lives on the token record, so clearing
+  // browser storage cannot reset it.
+  const token = getToastidReadyToken(req);
+  if (!token) {
+    return send(res, 401, { error: "A session token is required.", code: "token_required" });
+  }
+  const tokens = await loadToastidReadyTokens();
+  const rec = tokens.get(token);
+  if (!rec) {
+    return send(res, 401, { error: "Invalid session token.", code: "invalid_token" });
+  }
+  if (!rec.paid && rec.freeUsed >= TR_FREE_LIMIT) {
+    return send(res, 402, { error: "You've used your 5 free SOPs.", code: "free_limit_reached" });
+  }
   const apiKey = process.env.ANTHROPIC_API_KEY;
   if (!apiKey) {
     return send(res, 500, { error: "AI service is not configured on the server." });
@@ -573,6 +668,11 @@ app.post("/api/toastidready-generate", async (req, res) => {
       console.error("ToastidReady Anthropic upstream error:", upstream.status, JSON.stringify(data).slice(0, 500));
       return send(res, 502, { error: "AI service returned an error. Please try again." });
     }
+    // Successful generation consumes one free credit (paid tokens are unlimited).
+    if (!rec.paid) {
+      rec.freeUsed += 1;
+      await saveToastidReadyTokens();
+    }
     return send(res, 200, data);
   } catch (error) {
     console.error("ToastidReady generate error:", error);
@@ -596,6 +696,9 @@ app.post("/api/toastidready-lead", async (req, res) => {
   }
   try {
     await saveToastidReadyLead(lead);
+    // Issue (or re-issue for a returning email) the entitlement token.
+    // The PWA stores it and presents it on every generate call.
+    const token = await getOrCreateToastidReadyToken({ email: lead.email, ip: getClientIP(req) });
     // HubSpot failure never blocks the capture.
     try {
       const hubspotResult = await syncToastidReadyLeadToHubSpot(lead);
@@ -603,10 +706,59 @@ app.post("/api/toastidready-lead", async (req, res) => {
     } catch (hubspotError) {
       console.error("HubSpot ToastidReady lead sync failed; capture remains successful:", hubspotError);
     }
-    return send(res, 201, { ok: true, message: "Your information was saved." });
+    return send(res, 201, { ok: true, message: "Your information was saved.", token });
   } catch (error) {
     console.error("ToastidReady lead capture error:", error);
     return send(res, 500, { error: "Lead submission could not be completed." });
+  }
+});
+
+app.options("/api/toastidready-token", (req, res) => {
+  corsHeaders(res);
+  return res.status(204).end();
+});
+
+// Anonymous entitlement token for users who skip lead capture.
+// Rate-limited per IP so one device can't mint unlimited 5-packs.
+app.post("/api/toastidready-token", async (req, res) => {
+  if (!checkAnonTokenRateLimit(getClientIP(req))) {
+    return send(res, 429, { error: "Too many free sessions from this network. Try again tomorrow." });
+  }
+  try {
+    const token = await getOrCreateToastidReadyToken({ email: null, ip: getClientIP(req) });
+    return send(res, 200, { token });
+  } catch (error) {
+    console.error("ToastidReady token issue error:", error);
+    return send(res, 500, { error: "Could not start a free session." });
+  }
+});
+
+app.options("/api/toastidready-paid", (req, res) => {
+  corsHeaders(res);
+  return res.status(204).end();
+});
+
+// Marks a token as paid after PayPal subscription approval. Idempotent.
+// NOTE: client-asserted (same trust level as the previous localStorage
+// approach). PayPal webhook verification is the follow-up that makes this
+// airtight; until then a forged call could mark a token paid.
+app.post("/api/toastidready-paid", async (req, res) => {
+  const token = getToastidReadyToken(req);
+  const subscriptionID = typeof req.body?.subscriptionID === "string" ? req.body.subscriptionID.trim() : "";
+  if (!token || !subscriptionID) {
+    return send(res, 400, { error: "token and subscriptionID are required." });
+  }
+  try {
+    const tokens = await loadToastidReadyTokens();
+    const rec = tokens.get(token);
+    if (!rec) return send(res, 401, { error: "Invalid session token." });
+    rec.paid = true;
+    rec.subscriptionID = subscriptionID.slice(0, 64);
+    await saveToastidReadyTokens();
+    return send(res, 200, { ok: true });
+  } catch (error) {
+    console.error("ToastidReady paid-mark error:", error);
+    return send(res, 500, { error: "Could not activate subscription." });
   }
 });
 
