@@ -305,27 +305,40 @@ async function hubspotBiteFactRequest(method, url, properties, retriedWithoutSou
     const { bitefact_source: _dropped, ...rest } = properties;
     return hubspotBiteFactRequest(method, url, rest, true);
   }
+
+  throw new Error(`HubSpot ${method} ${url} failed (${response.status}): ${errText.slice(0, 300)}`);
+}
+
 // Posts the visitor's content/comment as a HubSpot note (timeline entry) on the contact.
 // Non-blocking: callers should catch failures so a note error never fails the lead sync.
 async function createBiteFactNote(contactId, comment) {
   const body = (comment || "").toString().slice(0, 10000);
   if (!body.trim()) return null;
-  const noteBody = {
-    properties: {
-      hs_note_body: `BiteFact lead comment:\n\n${body}`,
+  const response = await fetch("https://api.hubapi.com/crm/v3/objects/notes", {
+    method: "POST",
+    headers: {
+      "Authorization": `Bearer ${HUBSPOT_ACCESS_TOKEN}`,
+      "Content-Type": "application/json",
+      "Accept": "application/json"
     },
-    associations: [
-      {
-        to: { id: contactId },
-        types: [{ associationCategory: "HUBSPOT_DEFINED", associationTypeId: 202 }],
+    body: JSON.stringify({
+      properties: {
+        hs_note_body: `BiteFact lead comment:\n\n${body}`
       },
-    ],
-  };
-  const data = await hubspotBiteFactRequest("POST", "https://api.hubapi.com/crm/v3/objects/notes", noteBody, false);
+      associations: [
+        {
+          to: { id: contactId },
+          types: [{ associationCategory: "HUBSPOT_DEFINED", associationTypeId: 202 }]
+        }
+      ]
+    })
+  });
+  if (!response.ok) {
+    const errText = await response.text().catch(() => "");
+    throw new Error(`HubSpot note create failed (${response.status}): ${errText.slice(0, 300)}`);
+  }
+  const data = await response.json().catch(() => ({}));
   return data.id || null;
-}
-
-  throw new Error(`HubSpot ${method} ${url} failed (${response.status}): ${errText.slice(0, 300)}`);
 }
 
 async function syncBiteFactLeadToHubSpot(lead) {
