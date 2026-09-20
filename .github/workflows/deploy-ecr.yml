@@ -98,7 +98,7 @@ jobs:
             --task-definition "$CURRENT_TASK_DEF" \
             --query 'taskDefinition' > /tmp/taskdef.json
 
-          FAMILY=$(echo "$CURRENT_TASK_DEF" | sed 's|.*/task-definition/||; s|:.*||')
+          FAMILY=$(jq -r '.family' /tmp/taskdef.json)
           echo "Task family: $FAMILY"
 
           # Register a new revision identical to the current one, except the
