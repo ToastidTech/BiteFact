@@ -444,6 +444,172 @@ app.post("/api/bitefact-lead", async (req, res) => {
   }
 });
 
+/* =========================
+   TOASTIDREADY (SOP builder PWA — static GitHub Pages frontend)
+   AI proxy + lead capture served from this backend (no Cloudflare).
+   Additive only: no existing BiteFact route is modified.
+   ========================= */
+
+const TR_ALLOWED_MODELS = new Set(["claude-sonnet-4-6", "claude-opus-4-8"]);
+const TR_GENERATE_RATE_WINDOW_MS = 10 * 60 * 1000;
+const TR_GENERATE_RATE_MAX = 30;
+const trGenerateLog = new Map();
+
+function checkToastidReadyRateLimit(ip) {
+  const now = Date.now();
+  const entry = trGenerateLog.get(ip);
+  if (!entry || now - entry.windowStart > TR_GENERATE_RATE_WINDOW_MS) {
+    trGenerateLog.set(ip, { windowStart: now, count: 1 });
+    return { allowed: true };
+  }
+  entry.count += 1;
+  if (entry.count > TR_GENERATE_RATE_MAX) {
+    return {
+      allowed: false,
+      retryAfter: Math.ceil((TR_GENERATE_RATE_WINDOW_MS - (now - entry.windowStart)) / 1000)
+    };
+  }
+  return { allowed: true };
+}
+
+function validateToastidReadyLead(body) {
+  const name = typeof body?.name === "string" ? body.name.trim() : "";
+  const email = typeof body?.email === "string" ? body.email.trim().toLowerCase() : "";
+  if (!name || name.length > 120) return null;
+  if (!email || email.length > 254 || !/^(\S+@\S+\.\S+)$/.test(email)) return null;
+  return { name, email, submittedAt: new Date().toISOString() };
+}
+
+async function saveToastidReadyLead(lead) {
+  const file = process.env.TOASTIDREADY_LEADS_FILE || path.join(__dirname, "data", "toastidready-leads.jsonl");
+  await fs.promises.mkdir(path.dirname(file), { recursive: true });
+  await fs.promises.appendFile(file, JSON.stringify(lead) + "\n", "utf8");
+}
+
+async function syncToastidReadyLeadToHubSpot(lead) {
+  if (!HUBSPOT_ACCESS_TOKEN) {
+    console.warn("HubSpot sync skipped (ToastidReady): HUBSPOT_ACCESS_TOKEN is not configured.");
+    return { synced: false, reason: "not_configured" };
+  }
+  const nameParts = lead.name.split(/\s+/).filter(Boolean);
+  const firstname = nameParts.shift() || lead.name;
+  const lastname = nameParts.join(" ");
+  const properties = {
+    email: lead.email,
+    firstname,
+    ...(lastname ? { lastname } : {}),
+    toastidready_source: "ToastidReady Lead Capture"
+  };
+  const searchResponse = await fetch("https://api.hubapi.com/crm/v3/objects/contacts/search", {
+    method: "POST",
+    headers: {
+      "Authorization": `Bearer ${HUBSPOT_ACCESS_TOKEN}`,
+      "Content-Type": "application/json",
+      "Accept": "application/json"
+    },
+    body: JSON.stringify({
+      filterGroups: [{ filters: [{ propertyName: "email", operator: "EQ", value: lead.email }] }],
+      properties: ["email"],
+      limit: 1
+    })
+  });
+  if (!searchResponse.ok) {
+    const errText = await searchResponse.text().catch(() => "");
+    throw new Error(`HubSpot contact search failed (${searchResponse.status}): ${errText.slice(0, 300)}`);
+  }
+  const searchData = await searchResponse.json().catch(() => ({}));
+  let contactId = null;
+  let action = "updated";
+  if (Array.isArray(searchData.results) && searchData.results.length > 0) {
+    contactId = searchData.results[0].id;
+    await hubspotBiteFactRequest("PATCH", `https://api.hubapi.com/crm/v3/objects/contacts/${encodeURIComponent(contactId)}`, properties, false);
+  } else {
+    const createData = await hubspotBiteFactRequest("POST", "https://api.hubapi.com/crm/v3/objects/contacts", properties, false);
+    contactId = createData.id || null;
+    action = "created";
+  }
+  return { synced: true, action, contactId };
+}
+
+app.options("/api/toastidready-generate", (req, res) => {
+  corsHeaders(res);
+  return res.status(204).end();
+});
+
+app.post("/api/toastidready-generate", async (req, res) => {
+  const rate = checkToastidReadyRateLimit(getClientIP(req));
+  if (!rate.allowed) {
+    return send(res, 429, { error: "Too Many Requests", retryAfter: rate.retryAfter });
+  }
+  const apiKey = process.env.ANTHROPIC_API_KEY;
+  if (!apiKey) {
+    return send(res, 500, { error: "AI service is not configured on the server." });
+  }
+  const body = req.body || {};
+  const model = typeof body.model === "string" && TR_ALLOWED_MODELS.has(body.model) ? body.model : "claude-sonnet-4-6";
+  const maxTokens = Math.min(Math.max(Number(body.max_tokens) || 4000, 1), 6000);
+  if (!Array.isArray(body.messages) || body.messages.length === 0) {
+    return send(res, 400, { error: "messages[] is required." });
+  }
+  const system = typeof body.system === "string" ? body.system.slice(0, 12000) : undefined;
+
+  try {
+    const upstream = await fetch("https://api.anthropic.com/v1/messages", {
+      method: "POST",
+      headers: {
+        "x-api-key": apiKey,
+        "anthropic-version": "2023-06-01",
+        "Content-Type": "application/json"
+      },
+      body: JSON.stringify({
+        model,
+        max_tokens: maxTokens,
+        ...(system ? { system } : {}),
+        messages: body.messages
+      })
+    });
+    const data = await upstream.json().catch(() => ({}));
+    if (!upstream.ok) {
+      console.error("ToastidReady Anthropic upstream error:", upstream.status, JSON.stringify(data).slice(0, 500));
+      return send(res, 502, { error: "AI service returned an error. Please try again." });
+    }
+    return send(res, 200, data);
+  } catch (error) {
+    console.error("ToastidReady generate error:", error);
+    return send(res, 500, { error: "AI service is temporarily unavailable." });
+  }
+});
+
+app.options("/api/toastidready-lead", (req, res) => {
+  corsHeaders(res);
+  return res.status(204).end();
+});
+
+app.post("/api/toastidready-lead", async (req, res) => {
+  const rate = checkLeadRateLimit(getClientIP(req));
+  if (!rate.allowed) {
+    return send(res, 429, { error: "Too Many Requests", retryAfter: rate.retryAfter });
+  }
+  const lead = validateToastidReadyLead(req.body || {});
+  if (!lead) {
+    return send(res, 400, { error: "Name and a valid email are required." });
+  }
+  try {
+    await saveToastidReadyLead(lead);
+    // HubSpot failure never blocks the capture.
+    try {
+      const hubspotResult = await syncToastidReadyLeadToHubSpot(lead);
+      console.log("HubSpot ToastidReady lead sync:", hubspotResult);
+    } catch (hubspotError) {
+      console.error("HubSpot ToastidReady lead sync failed; capture remains successful:", hubspotError);
+    }
+    return send(res, 201, { ok: true, message: "Your information was saved." });
+  } catch (error) {
+    console.error("ToastidReady lead capture error:", error);
+    return send(res, 500, { error: "Lead submission could not be completed." });
+  }
+});
+
 app.get("/health", (req, res) => {
   return res.status(200).json({
     service: "bitefact-ai",
