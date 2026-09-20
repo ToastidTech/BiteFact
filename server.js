@@ -327,7 +327,10 @@ async function createBiteFactNote(contactId, comment) {
     },
     body: JSON.stringify({
       properties: {
-        hs_note_body: `BiteFact lead comment:\n\n${body}`
+        hs_note_body: `BiteFact lead comment:\n\n${body}`,
+        // HubSpot requires hs_timestamp on NOTE objects; without it the create
+        // fails with a 400 VALIDATION_ERROR (silently swallowed as non-blocking).
+        hs_timestamp: new Date().toISOString()
       },
       associations: [
         {
