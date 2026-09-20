@@ -486,3 +486,6 @@ function escapeAttribute(value) {
 loadUser();
 updateDashboard();
 updatePlanUI();
+
+// Signal a successful boot for the stuck-loading guard in index.html.
+window.__bitefactBooted = true;

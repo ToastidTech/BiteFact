@@ -95,13 +95,82 @@
 <script src="plans.js"></script>
 <script src="permissions.js"></script>
 <script>
-if ('serviceWorker' in navigator) {
-    window.addEventListener('load', () => {
-        navigator.serviceWorker.register('./sw.js').catch(error => {
-            console.warn('BiteFact service worker registration failed:', error);
+// BiteFact self-healing: update prompts + stuck-boot recovery (no customer cache-clearing needed).
+(function () {
+    function getToast() {
+        var el = document.getElementById("bfUpdateToast");
+        if (!el) {
+            el = document.createElement("div");
+            el.id = "bfUpdateToast";
+            el.setAttribute("role", "status");
+            el.style.cssText = "position:fixed;left:16px;right:16px;bottom:24px;z-index:9999;" +
+                "background:#0b1220;color:#eaf2ff;border:1px solid #274b73;border-radius:12px;" +
+                "padding:12px 14px;font:14px/1.4 system-ui,sans-serif;display:none;" +
+                "box-shadow:0 8px 30px rgba(0,0,0,.45);";
+            document.body.appendChild(el);
+        }
+        return el;
+    }
+
+    if ("serviceWorker" in navigator) {
+        window.addEventListener("load", function () {
+            navigator.serviceWorker.register("./sw.js").then(function (reg) {
+                reg.addEventListener("updatefound", function () {
+                    var sw = reg.installing;
+                    if (!sw) return;
+                    sw.addEventListener("statechange", function () {
+                        if (sw.state === "activated" && navigator.serviceWorker.controller) {
+                            var toast = getToast();
+                            toast.innerHTML = "A new version of BiteFact is ready. " +
+                                "<button id=\"bfRefreshBtn\" style=\"margin-left:8px;padding:6px 12px;border:0;" +
+                                "border-radius:8px;background:#1f9dff;color:#fff;font-weight:600;\">Refresh</button>";
+                            toast.style.display = "block";
+                            document.getElementById("bfRefreshBtn").onclick = function () {
+                                location.reload();
+                            };
+                        }
+                    });
+                });
+            }).catch(function (error) {
+                console.warn("BiteFact service worker registration failed:", error);
+            });
         });
-    });
-}
+    }
+
+    // Boot guard: if the app scripts never signal a successful boot, offer a one-tap fresh reload.
+    setTimeout(function () {
+        if (window.__bitefactBooted) return;
+        var overlay = document.createElement("div");
+        overlay.id = "bfBootGuard";
+        overlay.style.cssText = "position:fixed;inset:0;z-index:10000;background:#04060b;color:#eaf2ff;" +
+            "display:flex;flex-direction:column;align-items:center;justify-content:center;" +
+            "text-align:center;padding:32px;font:15px/1.5 system-ui,sans-serif;";
+        overlay.innerHTML = "<div style=\"font-size:40px;margin-bottom:12px;\">\u{1F37D}\uFE0F</div>" +
+            "<div style=\"font-weight:700;font-size:18px;margin-bottom:8px;\">BiteFact is stuck loading</div>" +
+            "<div style=\"opacity:.75;margin-bottom:20px;max-width:320px;\">The app didn\u2019t start properly. " +
+            "Tap below to reload a fresh copy &mdash; your logged meals are safe.</div>" +
+            "<button id=\"bfFreshReload\" style=\"padding:12px 28px;border:0;border-radius:12px;" +
+            "background:#1f9dff;color:#fff;font-size:16px;font-weight:700;\">Reload fresh</button>";
+        document.body.appendChild(overlay);
+        document.getElementById("bfFreshReload").onclick = function () {
+            (async function () {
+                try {
+                    if ("serviceWorker" in navigator) {
+                        var regs = await navigator.serviceWorker.getRegistrations();
+                        await Promise.all(regs.map(function (r) { return r.unregister(); }));
+                    }
+                    if ("caches" in window) {
+                        var keys = await caches.keys();
+                        await Promise.all(keys.filter(function (k) {
+                            return k.indexOf("bitefact-") === 0;
+                        }).map(function (k) { return caches.delete(k); }));
+                    }
+                } catch (e) { /* fall through to reload */ }
+                location.href = location.pathname + "?fresh=" + Date.now();
+            })();
+        };
+    }, 8000);
+})();
 </script>
 
 </body>
