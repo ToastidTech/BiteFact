@@ -298,14 +298,11 @@ async function hubspotBiteFactRequest(method, url, properties, retriedWithoutSou
   });
   if (response.ok) return response.json().catch(() => ({}));
   const errText = await response.text().catch(() => "");
-  // If HubSpot rejects one of our custom source properties (it doesn't exist in
+  // If HubSpot rejects our custom bitefact_source property (it doesn't exist in
   // the portal), retry once without it instead of failing the whole sync.
-  const rejectedSourceProp = ["bitefact_source", "toastidready_source"].find(
-    (p) => properties[p] !== undefined && new RegExp(p, "i").test(errText)
-  );
-  if (!retriedWithoutSource && response.status === 400 && rejectedSourceProp) {
-    console.warn(`HubSpot rejected the ${rejectedSourceProp} property (probably missing in portal); retrying without it.`);
-    const { [rejectedSourceProp]: _dropped, ...rest } = properties;
+  if (!retriedWithoutSource && response.status === 400 && /bitefact_source/i.test(errText) && properties.bitefact_source !== undefined) {
+    console.warn("HubSpot rejected the bitefact_source property (probably missing in portal); retrying without it.");
+    const { bitefact_source: _dropped, ...rest } = properties;
     return hubspotBiteFactRequest(method, url, rest, true);
   }
 
