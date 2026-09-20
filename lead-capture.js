@@ -261,6 +261,10 @@
   function init() {
     injectStyles();
     injectMarkup();
+    // Safety net: render plan PayPal buttons if the plans section already painted.
+    if (typeof window.bitefactRenderPayPal === 'function') {
+      try { window.bitefactRenderPayPal(); } catch (e) { console.warn('BiteFact PayPal init render:', e); }
+    }
     setTimeout(() => {
       if (!localStorage.getItem(CAPTURED_KEY) && !localStorage.getItem(INTRO_KEY)) showPrompt(false);
     }, 700);
