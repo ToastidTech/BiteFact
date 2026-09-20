@@ -178,3 +178,15 @@ button:active { transform: translateY(0); }
     .card p { font-size: 1.45rem; }
     .plans-header { align-items: flex-start; }
 }
+
+/* Lead capture + plans */
+.clear-totals-button {
+    grid-column: 1 / -1;
+    justify-self: center;
+    background: transparent;
+    border: 1px solid rgba(103, 214, 255, 0.28);
+    color: var(--accent-2);
+    box-shadow: none;
+    font-size: 0.8rem;
+    padding: 10px 16px;
+}

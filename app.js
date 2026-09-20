@@ -10,8 +10,40 @@ let user = {
     calories: 0,
     protein: 0,
     carbs: 0,
-    fat: 0
+    fat: 0,
+    totalsDate: ""
 };
+
+function localDateString(date) {
+    const year = date.getFullYear();
+    const month = String(date.getMonth() + 1).padStart(2, "0");
+    const day = String(date.getDate()).padStart(2, "0");
+    return `${year}-${month}-${day}`;
+}
+
+function resetDailyTotalsIfNewDay() {
+    // Daily totals reset at 00:01 local time: first load on a new calendar day
+    // zeroes the macros. Plan/trial/identity state is preserved.
+    const today = localDateString(new Date());
+    if (user.totalsDate !== today) {
+        user.calories = 0;
+        user.protein = 0;
+        user.carbs = 0;
+        user.fat = 0;
+        user.totalsDate = today;
+        saveUser();
+    }
+}
+
+function clearDailyTotals() {
+    user.calories = 0;
+    user.protein = 0;
+    user.carbs = 0;
+    user.fat = 0;
+    user.totalsDate = localDateString(new Date());
+    saveUser();
+    updateDashboard();
+}
 
 function saveUser() {
     localStorage.setItem("bitefact_user", JSON.stringify(user));
@@ -40,6 +72,8 @@ function loadUser() {
     if (!["free", "plus", "ai"].includes(user.plan)) {
         user.plan = "free";
     }
+
+    resetDailyTotalsIfNewDay();
 }
 
 async function analyzeMealWithAI(meal) {
@@ -107,6 +141,30 @@ async function addMeal() {
     await analyzeMealWithAI(meal);
 }
 
+function trialIsActive() {
+    return typeof window.bitefactTrialActive === "function" && window.bitefactTrialActive();
+}
+
+function trialDaysLeft() {
+    return typeof window.bitefactTrialDaysLeft === "function" ? window.bitefactTrialDaysLeft() : 0;
+}
+
+// The AI plate scanner is an AI-tier feature; the 3-day trial unlocks it.
+function plateScannerAccess() {
+    if (user.plan === "ai") return true;
+    return trialIsActive();
+}
+
+window.bitefactRefreshPlans = function () {
+    updatePlanUI();
+    updateDashboard();
+};
+
+window.bitefactOnSubscriptionApproved = function (plan) {
+    if (!["plus", "ai"].includes(plan)) return;
+    selectPlan(plan);
+};
+
 function selectPlan(plan) {
     if (!["free", "plus", "ai"].includes(plan)) return;
 
@@ -141,32 +199,52 @@ function updatePlanUI() {
         ai: "BiteFact AI"
     };
 
-    currentPlan.textContent = labels[user.plan];
+    currentPlan.textContent = labels[user.plan] + (trialIsActive() && user.plan === "free" ? ` (Trial: ${trialDaysLeft()}d left)` : "");
+
+    const trialBanner = trialIsActive() && user.plan === "free"
+        ? `<div class="trial-banner">🎉 Trial active — ${trialDaysLeft()} day(s) of AI plate scanner left.</div>`
+        : "";
 
     if (user.plan === "free") {
         options.innerHTML = `
-            <div class="plan-option-copy">
-                <strong>BiteFact Free</strong>
-                <span>Upgrade when you're ready for more.</span>
+            ${trialBanner}
+            <div class="plan-cards">
+                <div class="plan-card">
+                    <strong>BiteFact Plus</strong>
+                    <span class="plan-price">$12.99/mo</span>
+                    <span class="plan-desc">Manual logging, macro tracking, advanced reports, meal planning.</span>
+                    <div class="bitefact-paypal-wrap"><div id="bitefact-paypal-plus"></div></div>
+                </div>
+                <div class="plan-card">
+                    <strong>BiteFact AI</strong>
+                    <span class="plan-price">$19.99/mo</span>
+                    <span class="plan-desc">Everything in Plus, plus AI coach and the photo plate scanner.</span>
+                    <div class="bitefact-paypal-wrap"><div id="bitefact-paypal-ai"></div></div>
+                </div>
             </div>
-            <div class="plan-actions">
-                <button type="button" onclick="selectPlan('plus')">Upgrade to BiteFact Plus</button>
-                <button type="button" class="secondary-plan-button" onclick="selectPlan('ai')">Upgrade to BiteFact AI</button>
-            </div>
+            <p class="plan-note">New here? Your first visit starts a 3-day free trial of the AI plate scanner — no credit card required.</p>
         `;
+        if (typeof window.bitefactRenderPayPal === "function") window.bitefactRenderPayPal();
         return;
     }
 
     if (user.plan === "plus") {
         options.innerHTML = `
+            ${trialBanner}
             <div class="plan-option-copy">
                 <strong>BiteFact Plus</strong>
                 <span>You're already on Plus.</span>
             </div>
-            <div class="plan-actions">
-                <button type="button" onclick="selectPlan('ai')">Upgrade to BiteFact AI</button>
+            <div class="plan-cards">
+                <div class="plan-card">
+                    <strong>BiteFact AI</strong>
+                    <span class="plan-price">$19.99/mo</span>
+                    <span class="plan-desc">Add the AI coach and photo plate scanner.</span>
+                    <div class="bitefact-paypal-wrap"><div id="bitefact-paypal-ai"></div></div>
+                </div>
             </div>
         `;
+        if (typeof window.bitefactRenderPayPal === "function") window.bitefactRenderPayPal();
         return;
     }
 
@@ -185,6 +263,16 @@ function openCameraGuide(event) {
     if (event) {
         event.preventDefault();
         event.stopPropagation();
+    }
+
+    // The AI plate scanner is an AI-tier feature; the 3-day trial unlocks it.
+    if (!plateScannerAccess()) {
+        if (typeof window.bitefactShowLeadPrompt === "function") {
+            window.bitefactShowLeadPrompt();
+        } else {
+            alert("The AI plate scanner needs an active trial or a paid plan.");
+        }
+        return false;
     }
 
     let cameraInput = document.getElementById("bitefactCameraInput");

@@ -13,8 +13,9 @@ permissions:
 env:
   AWS_REGION: us-west-2
   ECR_REPOSITORY: bitefact
-  # BiteFact ECS Express service ARN
-  EXPRESS_SERVICE_ARN: arn:aws:ecs:us-west-2:299113402161:service/default/BiteFact
+  # Recreated BiteFact ECS service (standard mode, NOT Express)
+  ECS_CLUSTER: default
+  ECS_SERVICE: BiteFact
 
 jobs:
   build-and-push:
@@ -36,6 +37,7 @@ jobs:
         run: |
           node --check server.js
           node --check app.js
+          node --check lead-capture.js
           node --check sw.js
           node --check plans.js
           node --check permissions.js
@@ -74,24 +76,51 @@ jobs:
             ${{ steps.login-ecr.outputs.registry }}/${{ env.ECR_REPOSITORY }}:${{ github.sha }}
             ${{ steps.login-ecr.outputs.registry }}/${{ env.ECR_REPOSITORY }}:latest
 
-      - name: Deploy BiteFact to ECS Express Mode
+      - name: Deploy BiteFact to ECS
         env:
           IMAGE_URI: ${{ steps.login-ecr.outputs.registry }}/${{ env.ECR_REPOSITORY }}:${{ github.sha }}
         run: |
           set -euo pipefail
 
-          if [ "$EXPRESS_SERVICE_ARN" = "REPLACE_WITH_BITEFACT_EXPRESS_SERVICE_ARN" ]; then
-            echo "EXPRESS_SERVICE_ARN is not set yet; skipping deploy."
-            exit 0
-          fi
-
           echo "Deploying image: $IMAGE_URI"
-          echo "Express service: $EXPRESS_SERVICE_ARN"
+          echo "Cluster: $ECS_CLUSTER / Service: $ECS_SERVICE"
 
-          aws ecs update-express-gateway-service \
+          CURRENT_TASK_DEF=$(aws ecs describe-services \
             --region "$AWS_REGION" \
-            --service-arn "$EXPRESS_SERVICE_ARN" \
-            --primary-container "image=$IMAGE_URI,containerPort=8080,secrets=[{name=ANTHROPIC_API_KEY,valueFrom=/bitefact/ANTHROPIC_API_KEY}]" \
-            --monitor-resources
+            --cluster "$ECS_CLUSTER" \
+            --services "$ECS_SERVICE" \
+            --query 'services[0].taskDefinition' \
+            --output text)
+          echo "Current task definition: $CURRENT_TASK_DEF"
 
-          echo "BiteFact Express Mode deployment started."
+          aws ecs describe-task-definition \
+            --region "$AWS_REGION" \
+            --task-definition "$CURRENT_TASK_DEF" \
+            --query 'taskDefinition' > /tmp/taskdef.json
+
+          FAMILY=$(echo "$CURRENT_TASK_DEF" | sed 's|.*/task-definition/||; s|:.*||')
+          echo "Task family: $FAMILY"
+
+          # Register a new revision identical to the current one, except the
+          # container image. Secrets (ANTHROPIC_API_KEY, HUBSPOT_ACCESS_TOKEN)
+          # stay in the task definition; this step never touches them.
+          jq --arg IMG "$IMAGE_URI" '
+            del(.taskDefinitionArn, .revision, .status, .registeredAt, .registeredBy, .compatibilities, .requiresAttributes)
+            | .containerDefinitions |= map(.image = $IMG)
+          ' /tmp/taskdef.json > /tmp/new-taskdef.json
+
+          NEW_REVISION=$(aws ecs register-task-definition \
+            --region "$AWS_REGION" \
+            --cli-input-json file:///tmp/new-taskdef.json \
+            --query 'taskDefinition.revision' \
+            --output text)
+          echo "Registered revision: $FAMILY:$NEW_REVISION"
+
+          aws ecs update-service \
+            --region "$AWS_REGION" \
+            --cluster "$ECS_CLUSTER" \
+            --service "$ECS_SERVICE" \
+            --task-definition "$FAMILY:$NEW_REVISION" \
+            --force-new-deployment
+
+          echo "BiteFact ECS deployment started."

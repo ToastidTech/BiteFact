@@ -58,6 +58,8 @@
         <h3>Fat</h3>
         <p id="fat">0g / 70g</p>
     </div>
+
+    <button type="button" class="clear-totals-button" onclick="clearDailyTotals()">Clear today's totals</button>
 </section>
 
 <section class="meal-box">
@@ -91,6 +93,7 @@
 <script src="app.js"></script>
 <script src="plans.js"></script>
 <script src="permissions.js"></script>
+<script src="lead-capture.js"></script>
 <script>
 if ('serviceWorker' in navigator) {
     window.addEventListener('load', () => {

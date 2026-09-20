@@ -1,4 +1,6 @@
 const express = require("express");
+const fs = require("fs");
+const path = require("path");
 
 const app = express();
 const PORT = Number(process.env.PORT) || 8080;
@@ -226,6 +228,174 @@ app.post("/api/bitefact-ai-analyze", async (req, res) => {
     return send(res, error.status || 500, {
       error: error.message || "BiteFact AI is temporarily unavailable."
     });
+  }
+});
+
+/* =========================
+   LEAD CAPTURE (HubSpot — mirrors Cope)
+   ========================= */
+
+const HUBSPOT_ACCESS_TOKEN = String(process.env.HUBSPOT_ACCESS_TOKEN || "").trim();
+const HUBSPOT_SOURCE = String(process.env.HUBSPOT_SOURCE || "BiteFact Lead Capture").trim();
+const LEADS_FILE = process.env.BITEFACT_LEADS_FILE || path.join(__dirname, "data", "bitefact-leads.jsonl");
+const TRIAL_DURATION_MS = 3 * 24 * 60 * 60 * 1000;
+const LEAD_RATE_WINDOW_MS = 10 * 60 * 1000;
+const LEAD_RATE_MAX = 20;
+const leadRequestLog = new Map();
+
+if (!HUBSPOT_ACCESS_TOKEN) {
+  console.warn("HubSpot warning: HUBSPOT_ACCESS_TOKEN is empty — lead sync will be skipped (non-blocking).");
+} else if (!HUBSPOT_ACCESS_TOKEN.startsWith("pat-")) {
+  console.warn("HubSpot warning: token does not look like a private-app token (expected pat- prefix) — verify the SSM value.");
+}
+
+function getClientIP(req) {
+  const forwarded = req.headers["x-forwarded-for"];
+  return String(forwarded || req.ip || req.socket.remoteAddress || "unknown").split(",")[0].trim();
+}
+
+function checkLeadRateLimit(ip) {
+  const now = Date.now();
+  const entry = leadRequestLog.get(ip);
+  if (!entry || now >= entry.resetAt) {
+    leadRequestLog.set(ip, { count: 1, resetAt: now + LEAD_RATE_WINDOW_MS });
+    return { allowed: true };
+  }
+  entry.count += 1;
+  if (entry.count > LEAD_RATE_MAX) {
+    return { allowed: false, retryAfter: Math.ceil((entry.resetAt - now) / 1000) };
+  }
+  return { allowed: true };
+}
+
+function validateBiteFactLead(body) {
+  const name = typeof body?.name === "string" ? body.name.trim() : "";
+  const email = typeof body?.email === "string" ? body.email.trim().toLowerCase() : "";
+  const comment = typeof body?.comment === "string" ? body.comment.trim() : "";
+  const deviceId = typeof body?.deviceId === "string" ? body.deviceId.trim() : "";
+  if (!name || name.length > 120) return null;
+  if (!email || email.length > 254 || !/^(\S+@\S+\.\S+)$/.test(email)) return null;
+  if (comment.length > 2000) return null;
+  if (!/^[A-Za-z0-9._:-]{16,200}$/.test(deviceId)) return null;
+  return { name, email, comment, deviceId, submittedAt: new Date().toISOString() };
+}
+
+async function saveBiteFactLead(lead) {
+  await fs.promises.mkdir(path.dirname(LEADS_FILE), { recursive: true });
+  await fs.promises.appendFile(LEADS_FILE, JSON.stringify(lead) + "\n", "utf8");
+}
+
+async function hubspotBiteFactRequest(method, url, properties, retriedWithoutSource) {
+  const headers = {
+    "Authorization": `Bearer ${HUBSPOT_ACCESS_TOKEN}`,
+    "Content-Type": "application/json",
+    "Accept": "application/json"
+  };
+  const response = await fetch(url, {
+    method,
+    headers,
+    body: JSON.stringify({ properties })
+  });
+  if (response.ok) return response.json().catch(() => ({}));
+  const errText = await response.text().catch(() => "");
+  // If HubSpot rejects our custom bitefact_source property (it doesn't exist in
+  // the portal), retry once without it instead of failing the whole sync.
+  if (!retriedWithoutSource && response.status === 400 && /bitefact_source/i.test(errText) && properties.bitefact_source !== undefined) {
+    console.warn("HubSpot rejected the bitefact_source property (probably missing in portal); retrying without it.");
+    const { bitefact_source: _dropped, ...rest } = properties;
+    return hubspotBiteFactRequest(method, url, rest, true);
+  }
+  throw new Error(`HubSpot ${method} ${url} failed (${response.status}): ${errText.slice(0, 300)}`);
+}
+
+async function syncBiteFactLeadToHubSpot(lead) {
+  if (!HUBSPOT_ACCESS_TOKEN) {
+    console.warn("HubSpot sync skipped: HUBSPOT_ACCESS_TOKEN is not configured.");
+    return { synced: false, reason: "not_configured" };
+  }
+
+  const nameParts = lead.name.split(/\s+/).filter(Boolean);
+  const firstname = nameParts.shift() || lead.name;
+  const lastname = nameParts.join(" ");
+  const properties = {
+    email: lead.email,
+    firstname,
+    ...(lastname ? { lastname } : {}),
+    bitefact_source: HUBSPOT_SOURCE
+  };
+
+  const searchResponse = await fetch("https://api.hubapi.com/crm/v3/objects/contacts/search", {
+    method: "POST",
+    headers: {
+      "Authorization": `Bearer ${HUBSPOT_ACCESS_TOKEN}`,
+      "Content-Type": "application/json",
+      "Accept": "application/json"
+    },
+    body: JSON.stringify({
+      filterGroups: [{ filters: [{ propertyName: "email", operator: "EQ", value: lead.email }] }],
+      properties: ["email", "firstname", "lastname"],
+      limit: 1
+    })
+  });
+  if (!searchResponse.ok) {
+    const errText = await searchResponse.text().catch(() => "");
+    throw new Error(`HubSpot contact search failed (${searchResponse.status}): ${errText.slice(0, 300)}`);
+  }
+  const searchData = await searchResponse.json().catch(() => ({}));
+
+  if (Array.isArray(searchData.results) && searchData.results.length > 0) {
+    const contactId = searchData.results[0].id;
+    await hubspotBiteFactRequest("PATCH", `https://api.hubapi.com/crm/v3/objects/contacts/${encodeURIComponent(contactId)}`, properties, false);
+    return { synced: true, action: "updated", contactId };
+  }
+
+  const createData = await hubspotBiteFactRequest("POST", "https://api.hubapi.com/crm/v3/objects/contacts", properties, false);
+  return { synced: true, action: "created", contactId: createData.id || null };
+}
+
+app.options("/api/bitefact-lead", (req, res) => {
+  corsHeaders(res);
+  return res.status(204).end();
+});
+
+app.post("/api/bitefact-lead", async (req, res) => {
+  const rate = checkLeadRateLimit(getClientIP(req));
+  if (!rate.allowed) {
+    return send(res, 429, { error: "Too Many Requests", retryAfter: rate.retryAfter });
+  }
+
+  const lead = validateBiteFactLead(req.body || {});
+  if (!lead) {
+    return send(res, 400, { error: "Name, valid email, and a valid device identifier are required; comment is optional and limited to 2,000 characters." });
+  }
+
+  try {
+    const existingLeads = await fs.promises.readFile(LEADS_FILE, "utf8").catch((error) => error.code === "ENOENT" ? "" : Promise.reject(error));
+    const alreadySaved = existingLeads.split("\n").filter(Boolean).some((row) => {
+      try { return JSON.parse(row).deviceId === lead.deviceId; } catch (_) { return false; }
+    });
+    if (!alreadySaved) await saveBiteFactLead(lead);
+
+    const expiresAt = Date.now() + TRIAL_DURATION_MS;
+
+    // HubSpot failure never blocks the capture: trial is granted regardless.
+    try {
+      const hubspotResult = await syncBiteFactLeadToHubSpot(lead);
+      console.log("HubSpot BiteFact lead sync:", hubspotResult);
+    } catch (hubspotError) {
+      console.error("HubSpot BiteFact lead sync failed; capture remains successful:", hubspotError);
+    }
+
+    return send(res, 201, {
+      ok: true,
+      message: "Your information was saved.",
+      accessActive: true,
+      expiresAt,
+      durationDays: 3
+    });
+  } catch (error) {
+    console.error("BiteFact lead capture error:", error);
+    return send(res, 500, { error: "Lead submission could not be completed." });
   }
 });
 
