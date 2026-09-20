@@ -305,6 +305,26 @@ async function hubspotBiteFactRequest(method, url, properties, retriedWithoutSou
     const { bitefact_source: _dropped, ...rest } = properties;
     return hubspotBiteFactRequest(method, url, rest, true);
   }
+// Posts the visitor's content/comment as a HubSpot note (timeline entry) on the contact.
+// Non-blocking: callers should catch failures so a note error never fails the lead sync.
+async function createBiteFactNote(contactId, comment) {
+  const body = (comment || "").toString().slice(0, 10000);
+  if (!body.trim()) return null;
+  const noteBody = {
+    properties: {
+      hs_note_body: `BiteFact lead comment:\n\n${body}`,
+    },
+    associations: [
+      {
+        to: { id: contactId },
+        types: [{ associationCategory: "HUBSPOT_DEFINED", associationTypeId: 202 }],
+      },
+    ],
+  };
+  const data = await hubspotBiteFactRequest("POST", "https://api.hubapi.com/crm/v3/objects/notes", noteBody, false);
+  return data.id || null;
+}
+
   throw new Error(`HubSpot ${method} ${url} failed (${response.status}): ${errText.slice(0, 300)}`);
 }
 
@@ -343,14 +363,26 @@ async function syncBiteFactLeadToHubSpot(lead) {
   }
   const searchData = await searchResponse.json().catch(() => ({}));
 
+  let contactId = null;
+  let action = "updated";
   if (Array.isArray(searchData.results) && searchData.results.length > 0) {
-    const contactId = searchData.results[0].id;
+    contactId = searchData.results[0].id;
     await hubspotBiteFactRequest("PATCH", `https://api.hubapi.com/crm/v3/objects/contacts/${encodeURIComponent(contactId)}`, properties, false);
-    return { synced: true, action: "updated", contactId };
+  } else {
+    const createData = await hubspotBiteFactRequest("POST", "https://api.hubapi.com/crm/v3/objects/contacts", properties, false);
+    contactId = createData.id || null;
+    action = "created";
   }
 
-  const createData = await hubspotBiteFactRequest("POST", "https://api.hubapi.com/crm/v3/objects/contacts", properties, false);
-  return { synced: true, action: "created", contactId: createData.id || null };
+  // Post the visitor's comment as a HubSpot note on the contact (non-blocking).
+  if (contactId && lead.comment) {
+    try {
+      await createBiteFactNote(contactId, lead.comment);
+    } catch (noteError) {
+      console.warn("HubSpot BiteFact note sync failed (non-blocking):", noteError.message);
+    }
+  }
+  return { synced: true, action, contactId };
 }
 
 app.options("/api/bitefact-lead", (req, res) => {
