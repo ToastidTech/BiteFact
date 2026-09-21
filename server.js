@@ -781,6 +781,10 @@ const PM_PAYPAL_API_BASE = String(process.env.PAYPAL_ENV || "live").toLowerCase(
   : "https://api-m.paypal.com";
 const PM_PRICE = String(process.env.PULSEMATRIX_PRICE || "9.99");
 const PM_PAID_PROP = "pulsematrix_paid"; // HubSpot contact property (created once in the HubSpot UI)
+const PM_MASTERCODE = process.env.PULSEMATRIX_MASTERCODE || "";
+if (!PM_MASTERCODE) {
+  console.warn("PulseMatrix warning: PULSEMATRIX_MASTERCODE is empty — promo-code unlock is disabled.");
+}
 const PM_VERIFY_RATE_WINDOW_MS = 10 * 60 * 1000;
 const PM_VERIFY_RATE_MAX = 20;
 const pmVerifyLog = new Map();
@@ -982,7 +986,16 @@ app.post("/api/pulsematrix-verify", async (req, res) => {
   if (!rate.allowed) {
     return send(res, 429, { error: "Too Many Requests", retryAfter: rate.retryAfter });
   }
-  const email = validEmail(req.body && req.body.email);
+  const body = req.body || {};
+  // Promo/master code path: checked server-side only, never exposed to the client.
+  const code = String(body.code || "").trim();
+  if (code) {
+    const expected = PM_MASTERCODE;
+    const match = expected.length > 0 && code.length === expected.length &&
+      crypto.timingSafeEqual(Buffer.from(code, "utf8"), Buffer.from(expected, "utf8"));
+    return send(res, 200, { ok: true, paid: !!match, via: "promo" });
+  }
+  const email = validEmail(body.email);
   if (!email) {
     return send(res, 400, { error: "A valid email address is required." });
   }
