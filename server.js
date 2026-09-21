@@ -1003,7 +1003,7 @@ app.post("/api/pulsematrix-verify", async (req, res) => {
     const expected = PM_MASTERCODE;
     const match = expected.length > 0 && code.length === expected.length &&
       crypto.timingSafeEqual(Buffer.from(code, "utf8"), Buffer.from(expected, "utf8"));
-    return send(res, 200, { ok: true, paid: !!match, via: "promo" });
+    return send(res, 200, { ok: true, paid: !!match, via: "promo", promo_configured: expected.length > 0 });
   }
   const email = validEmail(body.email);
   if (!email) {
