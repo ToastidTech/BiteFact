@@ -34,7 +34,7 @@ const nutritionSchema = {
 
 app.disable("x-powered-by");
 app.set("trust proxy", 1);
-app.use(express.json({ limit: "12mb" }));
+app.use(express.json({ limit: "12mb", verify: (req, _res, buf) => { req.rawBody = buf; } }));
 
 function corsHeaders(res) {
   const allowedOrigin = process.env.BITEFACT_ALLOWED_ORIGIN || "*";
@@ -762,6 +762,236 @@ app.post("/api/toastidready-paid", async (req, res) => {
   } catch (error) {
     console.error("ToastidReady paid-mark error:", error);
     return send(res, 500, { error: "Could not activate subscription." });
+  }
+});
+
+
+/* =========================
+   PULSEMATRIX (one-time purchase — static GitHub Pages frontend)
+   PayPal webhook records buyers in HubSpot; email-based verify endpoint
+   re-unlocks the app after cache clears, on any device.
+   Additive only: no existing BiteFact/ToastidReady route is modified.
+   ========================= */
+
+const PM_PAYPAL_CLIENT_ID = process.env.PAYPAL_CLIENT_ID || "";
+const PM_PAYPAL_CLIENT_SECRET = process.env.PAYPAL_CLIENT_SECRET || "";
+const PM_PAYPAL_WEBHOOK_ID = process.env.PAYPAL_WEBHOOK_ID || "";
+const PM_PAYPAL_API_BASE = String(process.env.PAYPAL_ENV || "live").toLowerCase() === "sandbox"
+  ? "https://api-m.sandbox.paypal.com"
+  : "https://api-m.paypal.com";
+const PM_PRICE = String(process.env.PULSEMATRIX_PRICE || "9.99");
+const PM_PAID_PROP = "pulsematrix_paid"; // HubSpot contact property (created once in the HubSpot UI)
+const PM_VERIFY_RATE_WINDOW_MS = 10 * 60 * 1000;
+const PM_VERIFY_RATE_MAX = 20;
+const pmVerifyLog = new Map();
+let pmPayPalTokenCache = null;
+
+function checkPulseMatrixRateLimit(ip) {
+  const now = Date.now();
+  const entry = pmVerifyLog.get(ip);
+  if (!entry || now >= entry.resetAt) {
+    pmVerifyLog.set(ip, { count: 1, resetAt: now + PM_VERIFY_RATE_WINDOW_MS });
+    return { allowed: true };
+  }
+  entry.count += 1;
+  if (entry.count > PM_VERIFY_RATE_MAX) {
+    return { allowed: false, retryAfter: Math.ceil((entry.resetAt - now) / 1000) };
+  }
+  return { allowed: true };
+}
+
+function validEmail(value) {
+  const email = String(value || "").trim().toLowerCase();
+  if (!email || email.length > 254 || !/^\S+@\S+\.\S+$/.test(email)) return null;
+  return email;
+}
+
+async function getPayPalAccessToken() {
+  if (!PM_PAYPAL_CLIENT_ID || !PM_PAYPAL_CLIENT_SECRET) {
+    throw new Error("PayPal API credentials (PAYPAL_CLIENT_ID / PAYPAL_CLIENT_SECRET) are not configured.");
+  }
+  if (pmPayPalTokenCache && Date.now() < pmPayPalTokenCache.expiresAt) {
+    return pmPayPalTokenCache.token;
+  }
+  const basic = Buffer.from(`${PM_PAYPAL_CLIENT_ID}:${PM_PAYPAL_CLIENT_SECRET}`).toString("base64");
+  const resp = await fetch(`${PM_PAYPAL_API_BASE}/v1/oauth2/token`, {
+    method: "POST",
+    headers: { "Authorization": `Basic ${basic}`, "Content-Type": "application/x-www-form-urlencoded" },
+    body: "grant_type=client_credentials"
+  });
+  if (!resp.ok) throw new Error(`PayPal OAuth failed (${resp.status}).`);
+  const data = await resp.json().catch(() => ({}));
+  if (!data.access_token) throw new Error("PayPal OAuth returned no access token.");
+  pmPayPalTokenCache = {
+    token: data.access_token,
+    expiresAt: Date.now() + (Number(data.expires_in) || 300) * 1000 - 60000
+  };
+  return pmPayPalTokenCache.token;
+}
+
+async function verifyPayPalWebhookSignature(req, rawBody) {
+  if (!PM_PAYPAL_WEBHOOK_ID) {
+    console.error("PulseMatrix webhook: PAYPAL_WEBHOOK_ID is not configured — cannot verify signature.");
+    return false;
+  }
+  const token = await getPayPalAccessToken();
+  const resp = await fetch(`${PM_PAYPAL_API_BASE}/v1/notifications/verify-webhook-signature`, {
+    method: "POST",
+    headers: { "Authorization": `Bearer ${token}`, "Content-Type": "application/json" },
+    body: JSON.stringify({
+      auth_algo: req.headers["paypal-auth-algo"],
+      cert_url: req.headers["paypal-cert-url"],
+      transmission_id: req.headers["paypal-transmission-id"],
+      transmission_sig: req.headers["paypal-transmission-sig"],
+      transmission_time: req.headers["paypal-transmission-time"],
+      webhook_id: PM_PAYPAL_WEBHOOK_ID,
+      webhook_event: JSON.parse(rawBody)
+    })
+  });
+  if (!resp.ok) {
+    console.error(`PulseMatrix webhook: PayPal signature check failed (${resp.status}).`);
+    return false;
+  }
+  const data = await resp.json().catch(() => ({}));
+  return data.verification_status === "SUCCESS";
+}
+
+async function hubspotPulseMatrixSearch(email) {
+  const resp = await fetch("https://api.hubapi.com/crm/v3/objects/contacts/search", {
+    method: "POST",
+    headers: {
+      "Authorization": `Bearer ${HUBSPOT_ACCESS_TOKEN}`,
+      "Content-Type": "application/json",
+      "Accept": "application/json"
+    },
+    body: JSON.stringify({
+      filterGroups: [{ filters: [{ propertyName: "email", operator: "EQ", value: email }] }],
+      properties: ["email", PM_PAID_PROP],
+      limit: 1
+    })
+  });
+  if (!resp.ok) {
+    const errText = await resp.text().catch(() => "");
+    throw new Error(`HubSpot contact search failed (${resp.status}): ${errText.slice(0, 300)}`);
+  }
+  return resp.json().catch(() => ({}));
+}
+
+async function markPulseMatrixPaid(email, details) {
+  if (!HUBSPOT_ACCESS_TOKEN) throw new Error("HUBSPOT_ACCESS_TOKEN is not configured.");
+  const properties = { email, [PM_PAID_PROP]: "true" };
+  let contactId = null;
+  let action = "updated";
+  try {
+    const searchData = await hubspotPulseMatrixSearch(email);
+    if (Array.isArray(searchData.results) && searchData.results.length > 0) {
+      contactId = searchData.results[0].id;
+      const current = searchData.results[0].properties || {};
+      if (String(current[PM_PAID_PROP]).toLowerCase() === "true") {
+        return { synced: true, action: "already_paid", contactId };
+      }
+      await hubspotBiteFactRequest("PATCH", `https://api.hubapi.com/crm/v3/objects/contacts/${encodeURIComponent(contactId)}`, properties, false);
+    } else {
+      const createData = await hubspotBiteFactRequest("POST", "https://api.hubapi.com/crm/v3/objects/contacts", properties, false);
+      contactId = createData.id || null;
+      action = "created";
+    }
+  } catch (err) {
+    if (/pulsematrix_paid/i.test(err.message)) {
+      console.error("PulseMatrix: HubSpot rejected the pulsematrix_paid property — create it in HubSpot (Settings → Properties → Contact properties, internal name exactly 'pulsematrix_paid').");
+    }
+    throw err;
+  }
+  // Record the order/capture IDs as a timeline note (non-blocking).
+  if (contactId) {
+    try {
+      await fetch("https://api.hubapi.com/crm/v3/objects/notes", {
+        method: "POST",
+        headers: {
+          "Authorization": `Bearer ${HUBSPOT_ACCESS_TOKEN}`,
+          "Content-Type": "application/json",
+          "Accept": "application/json"
+        },
+        body: JSON.stringify({
+          properties: {
+            hs_note_body: `PulseMatrix purchase — $${PM_PRICE} one-time.\nOrder: ${details.orderId || "n/a"}\nCapture: ${details.captureId || "n/a"}\nDate: ${details.date || "n/a"}`,
+            hs_timestamp: Date.now()
+          },
+          associations: [{ to: { id: contactId }, types: [{ associationCategory: "HUBSPOT_DEFINED", associationTypeId: 202 }] }]
+        })
+      });
+    } catch (noteErr) {
+      console.warn("PulseMatrix purchase note failed (non-blocking):", noteErr.message);
+    }
+  }
+  return { synced: true, action, contactId };
+}
+
+async function isPulseMatrixPaid(email) {
+  if (!HUBSPOT_ACCESS_TOKEN) throw new Error("HUBSPOT_ACCESS_TOKEN is not configured.");
+  const searchData = await hubspotPulseMatrixSearch(email);
+  if (!Array.isArray(searchData.results) || searchData.results.length === 0) return false;
+  const props = searchData.results[0].properties || {};
+  return String(props[PM_PAID_PROP]).toLowerCase() === "true";
+}
+
+app.post("/api/pulsematrix-webhook", async (req, res) => {
+  let event = null;
+  try {
+    const raw = req.rawBody ? req.rawBody.toString("utf8") : "";
+    event = raw ? JSON.parse(raw) : (req.body || null);
+    if (!event || typeof event.event_type !== "string") {
+      return send(res, 400, { error: "Invalid webhook event." });
+    }
+    if (event.event_type !== "PAYMENT.CAPTURE.COMPLETED") {
+      return send(res, 200, { ok: true, ignored: event.event_type });
+    }
+    const rawForVerify = req.rawBody ? req.rawBody.toString("utf8") : JSON.stringify(event);
+    const verified = await verifyPayPalWebhookSignature(req, rawForVerify);
+    if (!verified) {
+      console.error("PulseMatrix webhook: PayPal signature verification FAILED — event ignored.");
+      return send(res, 400, { error: "Invalid webhook signature." });
+    }
+    const resource = event.resource || {};
+    const amount = resource.amount || {};
+    if (resource.status !== "COMPLETED" || amount.currency_code !== "USD" || String(amount.value) !== PM_PRICE) {
+      console.warn(`PulseMatrix webhook: capture ignored (status/amount mismatch: ${resource.status} ${amount.value} ${amount.currency_code}).`);
+      return send(res, 200, { ok: true, ignored: "price_mismatch" });
+    }
+    const payerEmail = validEmail(resource.payer && resource.payer.email_address);
+    if (!payerEmail) {
+      console.warn("PulseMatrix webhook: capture had no usable payer email.");
+      return send(res, 200, { ok: true, ignored: "no_payer_email" });
+    }
+    const related = (resource.supplementary_data && resource.supplementary_data.related_ids) || {};
+    const result = await markPulseMatrixPaid(payerEmail, {
+      orderId: related.order_id || "",
+      captureId: resource.id || "",
+      date: new Date().toISOString()
+    });
+    console.log(`PulseMatrix purchase recorded: ${payerEmail}`, result);
+    return send(res, 200, { ok: true });
+  } catch (err) {
+    console.error("PulseMatrix webhook error:", err.message);
+    return send(res, 500, { error: "Webhook processing failed." });
+  }
+});
+
+app.post("/api/pulsematrix-verify", async (req, res) => {
+  const rate = checkPulseMatrixRateLimit(getClientIP(req));
+  if (!rate.allowed) {
+    return send(res, 429, { error: "Too Many Requests", retryAfter: rate.retryAfter });
+  }
+  const email = validEmail(req.body && req.body.email);
+  if (!email) {
+    return send(res, 400, { error: "A valid email address is required." });
+  }
+  try {
+    const paid = await isPulseMatrixPaid(email);
+    return send(res, 200, { ok: true, paid });
+  } catch (err) {
+    console.error("PulseMatrix verify error:", err.message);
+    return send(res, 500, { error: "Purchase verification is temporarily unavailable." });
   }
 });
 
