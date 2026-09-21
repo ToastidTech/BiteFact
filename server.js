@@ -939,6 +939,11 @@ async function isPulseMatrixPaid(email) {
   return String(props[PM_PAID_PROP]).toLowerCase() === "true";
 }
 
+app.options("/api/pulsematrix-webhook", (req, res) => {
+  corsHeaders(res);
+  return res.status(204).end();
+});
+
 app.post("/api/pulsematrix-webhook", async (req, res) => {
   let event = null;
   try {
@@ -979,6 +984,11 @@ app.post("/api/pulsematrix-webhook", async (req, res) => {
     console.error("PulseMatrix webhook error:", err.message);
     return send(res, 500, { error: "Webhook processing failed." });
   }
+});
+
+app.options("/api/pulsematrix-verify", (req, res) => {
+  corsHeaders(res);
+  return res.status(204).end();
 });
 
 app.post("/api/pulsematrix-verify", async (req, res) => {
