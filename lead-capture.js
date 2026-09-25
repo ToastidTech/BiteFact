@@ -141,6 +141,7 @@
         if (!response.ok) throw new Error(data.error || `Server error: ${response.status}`);
         localStorage.setItem(CAPTURED_KEY, 'true');
         localStorage.setItem(TRIAL_KEY, String(data.expiresAt || (Date.now() + TRIAL_MS)));
+        try { gtag('event', 'sign_up', { method: 'trial' }); } catch (_) {}
         status.textContent = 'Trial active! The AI plate scanner is unlocked for 3 days.';
         status.style.color = '#7abfa0';
         submit.style.display = 'none';
@@ -231,6 +232,7 @@
       style: { shape: 'rect', color: 'gold', layout: 'vertical', label: 'subscribe' },
       createSubscription: (data, actions) => actions.subscription.create({ plan_id: planId }),
       onApprove: data => {
+        try { gtag('event', 'purchase', { currency: 'USD', value: planKey === 'ai' ? 19.99 : 12.99, transaction_id: data.subscriptionID || ('bitefact-' + Date.now()), items: [{ item_name: 'BiteFact ' + planKey }] }); } catch (_) {}
         container.dataset.rendered = 'true';
         const msg = document.createElement('div');
         msg.style.cssText = 'margin-top:8px;color:#7abfa0;font-size:.78rem;text-align:center;';
