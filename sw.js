@@ -1,4 +1,4 @@
-const CACHE_NAME = "bitefact-v13";
+const CACHE_NAME = "bitefact-v14";
 
 const CORE_FILES = [
   "./",
