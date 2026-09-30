@@ -232,7 +232,7 @@
       style: { shape: 'rect', color: 'gold', layout: 'vertical', label: 'subscribe' },
       createSubscription: (data, actions) => actions.subscription.create({ plan_id: planId }),
       onApprove: data => {
-        try { gtag('event', 'purchase', { currency: 'USD', value: planKey === 'ai' ? 19.99 : 12.99, transaction_id: data.subscriptionID || ('bitefact-' + Date.now()), items: [{ item_name: 'BiteFact ' + planKey }] }); } catch (_) {}
+        try { gtag('event', 'purchase', { currency: 'USD', value: planKey === 'ai' ? 19.99 : 12.99, transaction_id: data.subscriptionID || ('bitefact-' + Date.now()), items: [{ item_id: 'bitefact-' + planKey, item_name: 'BiteFact ' + planKey, price: planKey === 'ai' ? 19.99 : 12.99, quantity: 1 }] }); } catch (_) {}
         container.dataset.rendered = 'true';
         const msg = document.createElement('div');
         msg.style.cssText = 'margin-top:8px;color:#7abfa0;font-size:.78rem;text-align:center;';
