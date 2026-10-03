@@ -1,206 +1,26 @@
 <!DOCTYPE html>
 <html lang="en">
 <head>
-<!-- Google tag (gtag.js) -->
-<script async src="https://www.googletagmanager.com/gtag/js?id=G-DJXTN8EDT4"></script>
-<script>
-  window.dataLayer = window.dataLayer || [];
-  function gtag(){dataLayer.push(arguments);}
-  gtag('js', new Date());
-  gtag('config', 'G-DJXTN8EDT4');
-</script>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
-<meta name="theme-color" content="#00aaff">
-<meta name="description" content="BiteFact is an AI-powered nutrition coach for estimating meals, tracking calories and macros, and building healthier habits.">
-<meta name="apple-mobile-web-app-capable" content="yes">
-<meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
-
-<title>BiteFact | AI Nutrition Coach</title>
-
-<link rel="stylesheet" href="style.css">
-<link rel="manifest" href="manifest.json">
-<link rel="icon" href="assets/logo.png" type="image/png">
-<link rel="apple-touch-icon" href="assets/logo.png">
+<meta name="theme-color" content="#04060b">
+<title>BiteFact — Temporarily Offline</title>
+<style>
+  * { margin:0; padding:0; box-sizing:border-box; }
+  body { background:#04060b; color:#e8e8f0; font-family:-apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,sans-serif; min-height:100vh; display:flex; align-items:center; justify-content:center; text-align:center; padding:24px; }
+  .card { max-width:420px; }
+  .logo { font-size:15px; letter-spacing:4px; text-transform:uppercase; color:#8b8ba3; margin-bottom:24px; }
+  h1 { font-size:28px; margin-bottom:16px; font-weight:600; }
+  p { color:#a9a9c0; line-height:1.6; font-size:16px; }
+  .brand { margin-top:32px; font-size:13px; color:#5c5c72; }
+</style>
 </head>
-
 <body>
-
-<header class="brand-header">
-    <img class="brand-logo" src="assets/bitefact-ai-logo.jpg" alt="BiteFact AI logo">
-    <span class="plan-pill" id="currentPlan">Current Plan: Free</span>
-</header>
-
-<main class="app-main">
-
-    <!-- ============ DASHBOARD VIEW ============ -->
-    <section id="view-dashboard" class="view">
-        <section class="ring-card" aria-label="Daily nutrition progress">
-            <div class="ring-wrap">
-                <svg viewBox="0 0 200 200" class="calorie-ring" role="img" aria-label="Daily calorie progress">
-                    <defs>
-                        <linearGradient id="ringGradient" x1="0%" y1="0%" x2="100%" y2="100%">
-                            <stop offset="0%" stop-color="#67d6ff"/>
-                            <stop offset="100%" stop-color="#2f7dff"/>
-                        </linearGradient>
-                    </defs>
-                    <circle cx="100" cy="100" r="84" class="ring-track"></circle>
-                    <circle cx="100" cy="100" r="84" class="ring-progress" id="ringProgress"></circle>
-                </svg>
-                <div class="ring-center">
-                    <span class="ring-value" id="calories">0</span>
-                    <span class="ring-unit">kcal</span>
-                    <span class="ring-goal">of 2,200 kcal</span>
-                </div>
-            </div>
-            <p class="ring-caption" id="ringCaption">Daily calories</p>
-
-            <div class="macros">
-                <h3>Macros</h3>
-                <div class="macro-row">
-                    <div class="macro-label"><span>Protein</span><span id="protein">0g / 160g</span></div>
-                    <div class="macro-bar"><div class="macro-fill" id="proteinBar"></div></div>
-                </div>
-                <div class="macro-row">
-                    <div class="macro-label"><span>Carbs</span><span id="carbs">0g / 220g</span></div>
-                    <div class="macro-bar"><div class="macro-fill" id="carbsBar"></div></div>
-                </div>
-                <div class="macro-row">
-                    <div class="macro-label"><span>Fat</span><span id="fat">0g / 70g</span></div>
-                    <div class="macro-bar"><div class="macro-fill" id="fatBar"></div></div>
-                </div>
-            </div>
-
-            <button type="button" class="upgrade-cta" onclick="showUpgradeView()">Upgrade</button>
-            <button type="button" class="clear-totals-button" onclick="clearDailyTotals()">Clear today's totals</button>
-        </section>
-
-        <section class="coach-card">
-            <h2>🤖 BiteFact AI</h2>
-            <p>Take a photo of your meal to estimate calories and macros. Review the estimate before saving it to your daily totals.</p>
-            <button type="button" class="camera-button" onclick="openCameraGuide(event)">Use Camera</button>
-            <p class="coach-note" id="cameraNote">Camera scans estimate portions and macros. You always stay in control.</p>
-        </section>
-
-        <section class="meal-box">
-            <h2>Add Meal</h2>
-
-            <input id="foodName" placeholder="Food item">
-            <input id="foodCalories" type="number" placeholder="Calories">
-            <input id="foodProtein" type="number" placeholder="Protein grams">
-            <input id="foodCarbs" type="number" placeholder="Carbs grams">
-            <input id="foodFat" type="number" placeholder="Fat grams">
-
-            <button type="button" onclick="addMeal()">Add Meal</button>
-        </section>
-
-        <section class="coach">
-            <h2>🤖 Coach Insight</h2>
-            <p id="coachMessage">Welcome to BiteFact. Start by photographing a meal or logging one manually.</p>
-        </section>
-
-        <section class="disclaimer-banner" aria-label="Nutrition disclaimer">
-            <strong>Estimate only:</strong> calories, macros, and AI insights are approximations, not medical advice, and may not be exact.
-        </section>
-    </section>
-
-    <!-- ============ UPGRADE VIEW ============ -->
-    <section id="view-upgrade" class="view" hidden>
-        <button type="button" class="back-button" onclick="showDashboardView()">← Back</button>
-        <div class="upgrade-head">
-            <div class="section-kicker">Membership</div>
-            <h2>Upgrade</h2>
-            <p>Unlock more of BiteFact.</p>
-        </div>
-        <div id="planOptions" class="plan-options"></div>
-    </section>
-
-</main>
-
-<footer class="app-footer">Powered by Toastid Tech</footer>
-
-<script src="lead-capture.js"></script>
-<script src="app.js"></script>
-<script src="plans.js"></script>
-<script src="permissions.js"></script>
-<script>
-// BiteFact self-healing: update prompts + stuck-boot recovery (no customer cache-clearing needed).
-(function () {
-    function getToast() {
-        var el = document.getElementById("bfUpdateToast");
-        if (!el) {
-            el = document.createElement("div");
-            el.id = "bfUpdateToast";
-            el.setAttribute("role", "status");
-            el.style.cssText = "position:fixed;left:16px;right:16px;bottom:24px;z-index:9999;" +
-                "background:#0b1220;color:#eaf2ff;border:1px solid #274b73;border-radius:12px;" +
-                "padding:12px 14px;font:14px/1.4 system-ui,sans-serif;display:none;" +
-                "box-shadow:0 8px 30px rgba(0,0,0,.45);";
-            document.body.appendChild(el);
-        }
-        return el;
-    }
-
-    if ("serviceWorker" in navigator) {
-        window.addEventListener("load", function () {
-            navigator.serviceWorker.register("./sw.js").then(function (reg) {
-                reg.addEventListener("updatefound", function () {
-                    var sw = reg.installing;
-                    if (!sw) return;
-                    sw.addEventListener("statechange", function () {
-                        if (sw.state === "activated" && navigator.serviceWorker.controller) {
-                            var toast = getToast();
-                            toast.innerHTML = "A new version of BiteFact is ready. " +
-                                "<button id=\"bfRefreshBtn\" style=\"margin-left:8px;padding:6px 12px;border:0;" +
-                                "border-radius:8px;background:#1f9dff;color:#fff;font-weight:600;\">Refresh</button>";
-                            toast.style.display = "block";
-                            document.getElementById("bfRefreshBtn").onclick = function () {
-                                location.reload();
-                            };
-                        }
-                    });
-                });
-            }).catch(function (error) {
-                console.warn("BiteFact service worker registration failed:", error);
-            });
-        });
-    }
-
-    // Boot guard: if the app scripts never signal a successful boot, offer a one-tap fresh reload.
-    setTimeout(function () {
-        if (window.__bitefactBooted) return;
-        var overlay = document.createElement("div");
-        overlay.id = "bfBootGuard";
-        overlay.style.cssText = "position:fixed;inset:0;z-index:10000;background:#04060b;color:#eaf2ff;" +
-            "display:flex;flex-direction:column;align-items:center;justify-content:center;" +
-            "text-align:center;padding:32px;font:15px/1.5 system-ui,sans-serif;";
-        overlay.innerHTML = "<div style=\"font-size:40px;margin-bottom:12px;\">\u{1F37D}\uFE0F</div>" +
-            "<div style=\"font-weight:700;font-size:18px;margin-bottom:8px;\">BiteFact is stuck loading</div>" +
-            "<div style=\"opacity:.75;margin-bottom:20px;max-width:320px;\">The app didn\u2019t start properly. " +
-            "Tap below to reload a fresh copy &mdash; your logged meals are safe.</div>" +
-            "<button id=\"bfFreshReload\" style=\"padding:12px 28px;border:0;border-radius:12px;" +
-            "background:#1f9dff;color:#fff;font-size:16px;font-weight:700;\">Reload fresh</button>";
-        document.body.appendChild(overlay);
-        document.getElementById("bfFreshReload").onclick = function () {
-            (async function () {
-                try {
-                    if ("serviceWorker" in navigator) {
-                        var regs = await navigator.serviceWorker.getRegistrations();
-                        await Promise.all(regs.map(function (r) { return r.unregister(); }));
-                    }
-                    if ("caches" in window) {
-                        var keys = await caches.keys();
-                        await Promise.all(keys.filter(function (k) {
-                            return k.indexOf("bitefact-") === 0;
-                        }).map(function (k) { return caches.delete(k); }));
-                    }
-                } catch (e) { /* fall through to reload */ }
-                location.href = location.pathname + "?fresh=" + Date.now();
-            })();
-        };
-    }, 8000);
-})();
-</script>
-
+  <div class="card">
+    <div class="logo">BiteFact</div>
+    <h1>Temporarily offline</h1>
+    <p>We're performing maintenance and will be back shortly. Thanks for your patience.</p>
+    <div class="brand">Toastid Tech, LLC</div>
+  </div>
 </body>
 </html>

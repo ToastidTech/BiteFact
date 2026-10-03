@@ -3,6 +3,9 @@
 // The frontend can be hosted with the backend or pointed at a deployed backend URL.
 const AI_API_URL = window.BITEFACT_API_URL || "/api/bitefact-ai-analyze";
 
+// Daily macro goals (single source of truth for the dashboard).
+const DAILY_GOALS = { calories: 2200, protein: 160, carbs: 220, fat: 70 };
+
 let user = {
     plan: "free",
     trial: false,
@@ -22,8 +25,9 @@ function localDateString(date) {
 }
 
 function resetDailyTotalsIfNewDay() {
-    // Daily totals reset at 00:01 local time: first load on a new calendar day
-    // zeroes the macros. Plan/trial/identity state is preserved.
+    // Backstop: first load on a new calendar day zeroes the macros.
+    // The live 00:01 scheduler (scheduleDailyReset) handles the in-session case.
+    // Plan/trial/identity state is preserved.
     const today = localDateString(new Date());
     if (user.totalsDate !== today) {
         user.calories = 0;
@@ -35,7 +39,7 @@ function resetDailyTotalsIfNewDay() {
     }
 }
 
-function clearDailyTotals() {
+function resetDailyTotalsToZero(announce) {
     user.calories = 0;
     user.protein = 0;
     user.carbs = 0;
@@ -43,6 +47,48 @@ function clearDailyTotals() {
     user.totalsDate = localDateString(new Date());
     saveUser();
     updateDashboard();
+    if (announce) showToast("Daily totals reset — fresh day, fresh fuel.");
+}
+
+function scheduleDailyReset() {
+    // Fire at the next 00:01 in the user's local timezone, then re-arm.
+    // setTimeout maxes out around 24.8 days; our delay is always under 24h.
+    if (window.__bitefactResetTimer) clearTimeout(window.__bitefactResetTimer);
+
+    const now = new Date();
+    const next = new Date(now.getFullYear(), now.getMonth(), now.getDate(), 0, 1, 0, 0);
+    if (next.getTime() <= now.getTime()) next.setDate(next.getDate() + 1);
+
+    const delay = Math.max(1000, next.getTime() - now.getTime());
+    window.__bitefactResetTimer = setTimeout(() => {
+        resetDailyTotalsToZero(true);
+        scheduleDailyReset();
+    }, delay);
+}
+
+let toastTimer = null;
+function showToast(message) {
+    const el = document.getElementById("toast");
+    if (!el) return;
+    el.textContent = message;
+    el.classList.add("show");
+    if (toastTimer) clearTimeout(toastTimer);
+    toastTimer = setTimeout(() => el.classList.remove("show"), 2600);
+}
+
+function switchView(name) {
+    document.querySelectorAll(".view").forEach(section => {
+        section.classList.toggle("view-active", section.id === "view-" + name);
+    });
+    document.querySelectorAll(".tab").forEach(tab => {
+        tab.classList.toggle("tab-active", tab.dataset.view === name);
+    });
+    window.scrollTo({ top: 0, behavior: "smooth" });
+}
+
+function clearDailyTotals() {
+    resetDailyTotalsToZero(false);
+    showToast("Today's totals cleared.");
 }
 
 function saveUser() {
@@ -118,7 +164,7 @@ async function addMeal() {
     const fat = Number(document.getElementById("foodFat").value) || 0;
 
     if (!food) {
-        alert("Please enter a food item.");
+        showToast("Please enter a food item first.");
         return;
     }
 
@@ -138,24 +184,8 @@ async function addMeal() {
     document.getElementById("foodCarbs").value = "";
     document.getElementById("foodFat").value = "";
 
+    showToast(`${food} logged.`);
     await analyzeMealWithAI(meal);
-}
-
-/* =========================
-   VIEWS
-   ========================= */
-
-function showUpgradeView() {
-    document.getElementById("view-dashboard").hidden = true;
-    document.getElementById("view-upgrade").hidden = false;
-    window.scrollTo(0, 0);
-    updatePlanUI();
-}
-
-function showDashboardView() {
-    document.getElementById("view-upgrade").hidden = true;
-    document.getElementById("view-dashboard").hidden = false;
-    window.scrollTo(0, 0);
 }
 
 function trialIsActive() {
@@ -211,9 +241,9 @@ function updatePlanUI() {
     if (!currentPlan || !options) return;
 
     const labels = {
-        free: "Current Plan: Free",
-        plus: "Current Plan: Plus",
-        ai: "Current Plan: AI"
+        free: "BiteFact Free",
+        plus: "BiteFact Plus",
+        ai: "BiteFact AI"
     };
 
     currentPlan.textContent = labels[user.plan] + (trialIsActive() && user.plan === "free" ? ` (Trial: ${trialDaysLeft()}d left)` : "");
@@ -229,13 +259,13 @@ function updatePlanUI() {
                 <div class="plan-card">
                     <strong>BiteFact Plus</strong>
                     <span class="plan-price">$12.99/mo</span>
-                    <span class="plan-desc">Manual nutrition entry with calorie &amp; macro tracking and daily totals.</span>
+                    <span class="plan-desc">Manual logging, macro tracking, advanced reports, meal planning.</span>
                     <div class="bitefact-paypal-wrap"><div id="bitefact-paypal-plus"></div></div>
                 </div>
                 <div class="plan-card">
                     <strong>BiteFact AI</strong>
                     <span class="plan-price">$19.99/mo</span>
-                    <span class="plan-desc">Everything in Plus, plus the AI photo plate scanner and AI nutrition insights.</span>
+                    <span class="plan-desc">Everything in Plus, plus AI coach and the photo plate scanner.</span>
                     <div class="bitefact-paypal-wrap"><div id="bitefact-paypal-ai"></div></div>
                 </div>
             </div>
@@ -256,7 +286,7 @@ function updatePlanUI() {
                 <div class="plan-card">
                     <strong>BiteFact AI</strong>
                     <span class="plan-price">$19.99/mo</span>
-                    <span class="plan-desc">Add the AI photo plate scanner and AI nutrition insights.</span>
+                    <span class="plan-desc">Add the AI coach and photo plate scanner.</span>
                     <div class="bitefact-paypal-wrap"><div id="bitefact-paypal-ai"></div></div>
                 </div>
             </div>
@@ -480,31 +510,35 @@ function logAIResult() {
     window.bitefactAIResult = null;
 }
 
-const GOALS = { calories: 2200, protein: 160, carbs: 220, fat: 70 };
-const RING_CIRCUMFERENCE = 2 * Math.PI * 84;
+function setText(id, value) {
+    const el = document.getElementById(id);
+    if (el) el.textContent = value;
+}
 
-function setMacro(name, value, goal) {
-    const val = document.getElementById(name);
-    if (val) val.textContent = `${Math.round(value)}g / ${goal}g`;
-    const bar = document.getElementById(name + "Bar");
-    if (bar) bar.style.width = `${Math.min((value / goal) * 100, 100)}%`;
+function renderMacro(key, amount, unit) {
+    const goal = DAILY_GOALS[key];
+    setText(key + "Value", `${Math.round(amount)}${unit}`);
+    const bar = document.getElementById(key + "Bar");
+    if (bar) bar.style.width = `${Math.min(100, (amount / goal) * 100)}%`;
 }
 
 function updateDashboard() {
-    const calPct = Math.min(user.calories / GOALS.calories, 1);
+    const calories = Math.max(0, Math.round(user.calories));
 
-    const ring = document.getElementById("ringProgress");
-    if (ring) ring.style.strokeDashoffset = String(RING_CIRCUMFERENCE * (1 - calPct));
+    const ring = document.getElementById("calorieRing");
+    if (ring) {
+        const circumference = 2 * Math.PI * 84;
+        const progress = Math.min(1, calories / DAILY_GOALS.calories);
+        ring.style.strokeDasharray = String(circumference);
+        ring.style.strokeDashoffset = String(circumference * (1 - progress));
+    }
 
-    const calEl = document.getElementById("calories");
-    if (calEl) calEl.textContent = Math.round(user.calories).toLocaleString("en-US");
+    setText("caloriesValue", String(calories));
+    setText("caloriesSub", `${calories.toLocaleString()} of ${DAILY_GOALS.calories.toLocaleString()}`);
 
-    const caption = document.getElementById("ringCaption");
-    if (caption) caption.textContent = `Daily calories — ${Math.round(calPct * 100)}% of goal`;
-
-    setMacro("protein", user.protein, GOALS.protein);
-    setMacro("carbs", user.carbs, GOALS.carbs);
-    setMacro("fat", user.fat, GOALS.fat);
+    renderMacro("protein", user.protein, "g");
+    renderMacro("carbs", user.carbs, "g");
+    renderMacro("fat", user.fat, "g");
 }
 
 function escapeHtml(value) {
@@ -523,6 +557,17 @@ function escapeAttribute(value) {
 loadUser();
 updateDashboard();
 updatePlanUI();
+scheduleDailyReset();
 
-// Signal a successful boot for the stuck-loading guard in index.html.
-window.__bitefactBooted = true;
+// Backstop for apps left open in a background tab: re-check the date when visible.
+document.addEventListener("visibilitychange", () => {
+    if (document.visibilityState === "visible") {
+        const before = JSON.stringify({ c: user.calories, p: user.protein, cb: user.carbs, f: user.fat });
+        resetDailyTotalsIfNewDay();
+        const after = JSON.stringify({ c: user.calories, p: user.protein, cb: user.carbs, f: user.fat });
+        if (before !== after) {
+            updateDashboard();
+            showToast("Daily totals reset — fresh day, fresh fuel.");
+        }
+    }
+});

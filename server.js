@@ -1,5 +1,4 @@
 const express = require("express");
-const crypto = require("crypto");
 const fs = require("fs");
 const path = require("path");
 
@@ -34,7 +33,39 @@ const nutritionSchema = {
 
 app.disable("x-powered-by");
 app.set("trust proxy", 1);
-app.use(express.json({ limit: "12mb", verify: (req, _res, buf) => { req.rawBody = buf; } }));
+app.use(express.json({ limit: "12mb" }));
+
+// === TEMPORARY MAINTENANCE LOCKOUT (2026-10-03) — revert this block to restore service ===
+const MAINTENANCE_PAGE = `<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Temporarily Offline</title>
+<style>
+  * { margin:0; padding:0; box-sizing:border-box; }
+  body { background:#04060b; color:#e8e8f0; font-family:-apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,sans-serif; min-height:100vh; display:flex; align-items:center; justify-content:center; text-align:center; padding:24px; }
+  .card { max-width:420px; }
+  h1 { font-size:28px; margin-bottom:16px; font-weight:600; }
+  p { color:#a9a9c0; line-height:1.6; font-size:16px; }
+  .brand { margin-top:32px; font-size:13px; color:#5c5c72; }
+</style>
+</head>
+<body>
+  <div class="card">
+    <h1>Temporarily offline</h1>
+    <p>We're performing maintenance and will be back shortly. Thanks for your patience.</p>
+    <div class="brand">Toastid Tech, LLC</div>
+  </div>
+</body>
+</html>`;
+app.use((req, res, next) => {
+  if (req.path === "/health") return next();
+  if (req.path.startsWith("/api/") || req.method !== "GET")
+    return res.status(503).json({ error: "Service temporarily offline for maintenance." });
+  return res.status(503).send(MAINTENANCE_PAGE);
+});
+// === END MAINTENANCE LOCKOUT ===
 
 function corsHeaders(res) {
   const allowedOrigin = process.env.BITEFACT_ALLOWED_ORIGIN || "*";
@@ -299,25 +330,17 @@ async function hubspotBiteFactRequest(method, url, properties, retriedWithoutSou
   });
   if (response.ok) return response.json().catch(() => ({}));
   const errText = await response.text().catch(() => "");
-  // If HubSpot rejects one of our custom source properties (it doesn't exist in
+  // If HubSpot rejects our custom bitefact_source property (it doesn't exist in
   // the portal), retry once without it instead of failing the whole sync.
-  const rejectedSourceProp = ["bitefact_source", "toastidready_source"].find(
-    (p) => properties[p] !== undefined && new RegExp(p, "i").test(errText)
-  );
-  if (!retriedWithoutSource && response.status === 400 && rejectedSourceProp) {
-    console.warn(`HubSpot rejected the ${rejectedSourceProp} property (probably missing in portal); retrying without it.`);
-    const { [rejectedSourceProp]: _dropped, ...rest } = properties;
+  if (!retriedWithoutSource && response.status === 400 && /bitefact_source/i.test(errText) && properties.bitefact_source !== undefined) {
+    console.warn("HubSpot rejected the bitefact_source property (probably missing in portal); retrying without it.");
+    const { bitefact_source: _dropped, ...rest } = properties;
     return hubspotBiteFactRequest(method, url, rest, true);
   }
-
   throw new Error(`HubSpot ${method} ${url} failed (${response.status}): ${errText.slice(0, 300)}`);
 }
 
-// Posts the visitor's content/comment as a HubSpot note (timeline entry) on the contact.
-// Non-blocking: callers should catch failures so a note error never fails the lead sync.
 async function createBiteFactNote(contactId, comment) {
-  const body = (comment || "").toString().slice(0, 10000);
-  if (!body.trim()) return null;
   const response = await fetch("https://api.hubapi.com/crm/v3/objects/notes", {
     method: "POST",
     headers: {
@@ -326,26 +349,17 @@ async function createBiteFactNote(contactId, comment) {
       "Accept": "application/json"
     },
     body: JSON.stringify({
-      properties: {
-        hs_note_body: `BiteFact lead comment:\n\n${body}`,
-        // HubSpot requires hs_timestamp on NOTE objects; without it the create
-        // fails with a 400 VALIDATION_ERROR (silently swallowed as non-blocking).
-        hs_timestamp: new Date().toISOString()
-      },
-      associations: [
-        {
-          to: { id: contactId },
-          types: [{ associationCategory: "HUBSPOT_DEFINED", associationTypeId: 202 }]
-        }
-      ]
+      properties: { hs_note_body: comment.slice(0, 10000) },
+      associations: [{
+        to: { id: String(contactId) },
+        types: [{ associationCategory: "HUBSPOT_DEFINED", associationTypeId: 202 }]
+      }]
     })
   });
   if (!response.ok) {
     const errText = await response.text().catch(() => "");
-    throw new Error(`HubSpot note create failed (${response.status}): ${errText.slice(0, 300)}`);
+    throw new Error(`HubSpot note create failed (${response.status}): ${errText.slice(0, 200)}`);
   }
-  const data = await response.json().catch(() => ({}));
-  return data.id || null;
 }
 
 async function syncBiteFactLeadToHubSpot(lead) {
@@ -448,573 +462,6 @@ app.post("/api/bitefact-lead", async (req, res) => {
   } catch (error) {
     console.error("BiteFact lead capture error:", error);
     return send(res, 500, { error: "Lead submission could not be completed." });
-  }
-});
-
-/* =========================
-   TOASTIDREADY (SOP builder PWA — static GitHub Pages frontend)
-   AI proxy + lead capture served from this backend (no Cloudflare).
-   Additive only: no existing BiteFact route is modified.
-   ========================= */
-
-const TR_ALLOWED_MODELS = new Set(["claude-sonnet-4-6", "claude-opus-4-8"]);
-const TR_GENERATE_RATE_WINDOW_MS = 10 * 60 * 1000;
-const TR_GENERATE_RATE_MAX = 30;
-const trGenerateLog = new Map();
-
-function checkToastidReadyRateLimit(ip) {
-  const now = Date.now();
-  const entry = trGenerateLog.get(ip);
-  if (!entry || now - entry.windowStart > TR_GENERATE_RATE_WINDOW_MS) {
-    trGenerateLog.set(ip, { windowStart: now, count: 1 });
-    return { allowed: true };
-  }
-  entry.count += 1;
-  if (entry.count > TR_GENERATE_RATE_MAX) {
-    return {
-      allowed: false,
-      retryAfter: Math.ceil((TR_GENERATE_RATE_WINDOW_MS - (now - entry.windowStart)) / 1000)
-    };
-  }
-  return { allowed: true };
-}
-
-/* ── ToastidReady entitlement tokens ──────────────────────────
-   The 5-free-SOP counter lives HERE, not in the browser. Each lead
-   (or anonymous skip) gets an unguessable token; every generate call
-   must present it and the server decrements the free balance.
-   Clearing browser storage cannot mint new free generations.      */
-const TR_FREE_LIMIT = 5;
-const TR_TOKENS_FILE = process.env.TOASTIDREADY_TOKENS_FILE || path.join(__dirname, "data", "toastidready-tokens.json");
-const TR_ANON_TOKEN_WINDOW_MS = 24 * 60 * 60 * 1000;
-const TR_ANON_TOKEN_MAX_PER_IP = 3;
-const trAnonTokenLog = new Map();
-let trTokens = null; // token -> { email, freeUsed, paid, createdAt, ip }
-
-async function loadToastidReadyTokens() {
-  if (trTokens) return trTokens;
-  trTokens = new Map();
-  try {
-    const raw = await fs.promises.readFile(TR_TOKENS_FILE, "utf8");
-    const obj = JSON.parse(raw);
-    for (const [k, v] of Object.entries(obj || {})) {
-      if (v && typeof v === "object") trTokens.set(k, v);
-    }
-  } catch (e) { /* no store yet — start empty */ }
-  return trTokens;
-}
-
-async function saveToastidReadyTokens() {
-  const obj = Object.fromEntries(trTokens);
-  const tmp = TR_TOKENS_FILE + ".tmp";
-  await fs.promises.mkdir(path.dirname(TR_TOKENS_FILE), { recursive: true });
-  await fs.promises.writeFile(tmp, JSON.stringify(obj), "utf8");
-  await fs.promises.rename(tmp, TR_TOKENS_FILE);
-}
-
-function newToastidReadyToken() {
-  return "tr_" + crypto.randomBytes(24).toString("hex");
-}
-
-async function getOrCreateToastidReadyToken({ email, ip }) {
-  const tokens = await loadToastidReadyTokens();
-  if (email) {
-    for (const [tok, rec] of tokens) {
-      if (rec.email === email) return tok; // same email → same token, no fresh 5
-    }
-  }
-  const token = newToastidReadyToken();
-  tokens.set(token, {
-    email: email || null,
-    freeUsed: 0,
-    paid: false,
-    createdAt: new Date().toISOString(),
-    ip: ip || null
-  });
-  await saveToastidReadyTokens();
-  return token;
-}
-
-// Anonymous tokens (lead-capture skips) are capped per IP per day so one
-// device can't mint unlimited 5-packs.
-function checkAnonTokenRateLimit(ip) {
-  const now = Date.now();
-  const entry = trAnonTokenLog.get(ip);
-  if (!entry || now - entry.windowStart > TR_ANON_TOKEN_WINDOW_MS) {
-    trAnonTokenLog.set(ip, { windowStart: now, count: 1 });
-    return true;
-  }
-  entry.count += 1;
-  return entry.count <= TR_ANON_TOKEN_MAX_PER_IP;
-}
-
-function getToastidReadyToken(req) {
-  const body = req.body || {};
-  if (typeof body.token === "string" && body.token) return body.token;
-  const h = req.headers["x-toastidready-token"];
-  if (typeof h === "string" && h) return h;
-  return null;
-}
-
-function validateToastidReadyLead(body) {  const name = typeof body?.name === "string" ? body.name.trim() : "";
-  const email = typeof body?.email === "string" ? body.email.trim().toLowerCase() : "";
-  if (!name || name.length > 120) return null;
-  if (!email || email.length > 254 || !/^(\S+@\S+\.\S+)$/.test(email)) return null;
-  return { name, email, submittedAt: new Date().toISOString() };
-}
-
-async function saveToastidReadyLead(lead) {
-  const file = process.env.TOASTIDREADY_LEADS_FILE || path.join(__dirname, "data", "toastidready-leads.jsonl");
-  await fs.promises.mkdir(path.dirname(file), { recursive: true });
-  await fs.promises.appendFile(file, JSON.stringify(lead) + "\n", "utf8");
-}
-
-async function syncToastidReadyLeadToHubSpot(lead) {
-  if (!HUBSPOT_ACCESS_TOKEN) {
-    console.warn("HubSpot sync skipped (ToastidReady): HUBSPOT_ACCESS_TOKEN is not configured.");
-    return { synced: false, reason: "not_configured" };
-  }
-  const nameParts = lead.name.split(/\s+/).filter(Boolean);
-  const firstname = nameParts.shift() || lead.name;
-  const lastname = nameParts.join(" ");
-  const properties = {
-    email: lead.email,
-    firstname,
-    ...(lastname ? { lastname } : {}),
-    toastidready_source: "ToastidReady Lead Capture"
-  };
-  const searchResponse = await fetch("https://api.hubapi.com/crm/v3/objects/contacts/search", {
-    method: "POST",
-    headers: {
-      "Authorization": `Bearer ${HUBSPOT_ACCESS_TOKEN}`,
-      "Content-Type": "application/json",
-      "Accept": "application/json"
-    },
-    body: JSON.stringify({
-      filterGroups: [{ filters: [{ propertyName: "email", operator: "EQ", value: lead.email }] }],
-      properties: ["email"],
-      limit: 1
-    })
-  });
-  if (!searchResponse.ok) {
-    const errText = await searchResponse.text().catch(() => "");
-    throw new Error(`HubSpot contact search failed (${searchResponse.status}): ${errText.slice(0, 300)}`);
-  }
-  const searchData = await searchResponse.json().catch(() => ({}));
-  let contactId = null;
-  let action = "updated";
-  if (Array.isArray(searchData.results) && searchData.results.length > 0) {
-    contactId = searchData.results[0].id;
-    await hubspotBiteFactRequest("PATCH", `https://api.hubapi.com/crm/v3/objects/contacts/${encodeURIComponent(contactId)}`, properties, false);
-  } else {
-    const createData = await hubspotBiteFactRequest("POST", "https://api.hubapi.com/crm/v3/objects/contacts", properties, false);
-    contactId = createData.id || null;
-    action = "created";
-  }
-  return { synced: true, action, contactId };
-}
-
-app.options("/api/toastidready-generate", (req, res) => {
-  corsHeaders(res);
-  return res.status(204).end();
-});
-
-app.post("/api/toastidready-generate", async (req, res) => {
-  const rate = checkToastidReadyRateLimit(getClientIP(req));
-  if (!rate.allowed) {
-    return send(res, 429, { error: "Too Many Requests", retryAfter: rate.retryAfter });
-  }
-  // Server-side entitlement: every generate call must present a token.
-  // The free-generation counter lives on the token record, so clearing
-  // browser storage cannot reset it.
-  const token = getToastidReadyToken(req);
-  if (!token) {
-    return send(res, 401, { error: "A session token is required.", code: "token_required" });
-  }
-  const tokens = await loadToastidReadyTokens();
-  const rec = tokens.get(token);
-  if (!rec) {
-    return send(res, 401, { error: "Invalid session token.", code: "invalid_token" });
-  }
-  if (!rec.paid && rec.freeUsed >= TR_FREE_LIMIT) {
-    return send(res, 402, { error: "You've used your 5 free SOPs.", code: "free_limit_reached" });
-  }
-  const apiKey = process.env.ANTHROPIC_API_KEY;
-  if (!apiKey) {
-    return send(res, 500, { error: "AI service is not configured on the server." });
-  }
-  const body = req.body || {};
-  const model = typeof body.model === "string" && TR_ALLOWED_MODELS.has(body.model) ? body.model : "claude-sonnet-4-6";
-  const maxTokens = Math.min(Math.max(Number(body.max_tokens) || 4000, 1), 6000);
-  if (!Array.isArray(body.messages) || body.messages.length === 0) {
-    return send(res, 400, { error: "messages[] is required." });
-  }
-  const system = typeof body.system === "string" ? body.system.slice(0, 12000) : undefined;
-
-  try {
-    const upstream = await fetch("https://api.anthropic.com/v1/messages", {
-      method: "POST",
-      headers: {
-        "x-api-key": apiKey,
-        "anthropic-version": "2023-06-01",
-        "Content-Type": "application/json"
-      },
-      body: JSON.stringify({
-        model,
-        max_tokens: maxTokens,
-        ...(system ? { system } : {}),
-        messages: body.messages
-      })
-    });
-    const data = await upstream.json().catch(() => ({}));
-    if (!upstream.ok) {
-      console.error("ToastidReady Anthropic upstream error:", upstream.status, JSON.stringify(data).slice(0, 500));
-      return send(res, 502, { error: "AI service returned an error. Please try again." });
-    }
-    // Successful generation consumes one free credit (paid tokens are unlimited).
-    if (!rec.paid) {
-      rec.freeUsed += 1;
-      await saveToastidReadyTokens();
-    }
-    return send(res, 200, data);
-  } catch (error) {
-    console.error("ToastidReady generate error:", error);
-    return send(res, 500, { error: "AI service is temporarily unavailable." });
-  }
-});
-
-app.options("/api/toastidready-lead", (req, res) => {
-  corsHeaders(res);
-  return res.status(204).end();
-});
-
-app.post("/api/toastidready-lead", async (req, res) => {
-  const rate = checkLeadRateLimit(getClientIP(req));
-  if (!rate.allowed) {
-    return send(res, 429, { error: "Too Many Requests", retryAfter: rate.retryAfter });
-  }
-  const lead = validateToastidReadyLead(req.body || {});
-  if (!lead) {
-    return send(res, 400, { error: "Name and a valid email are required." });
-  }
-  try {
-    await saveToastidReadyLead(lead);
-    // Issue (or re-issue for a returning email) the entitlement token.
-    // The PWA stores it and presents it on every generate call.
-    const token = await getOrCreateToastidReadyToken({ email: lead.email, ip: getClientIP(req) });
-    // HubSpot failure never blocks the capture.
-    try {
-      const hubspotResult = await syncToastidReadyLeadToHubSpot(lead);
-      console.log("HubSpot ToastidReady lead sync:", hubspotResult);
-    } catch (hubspotError) {
-      console.error("HubSpot ToastidReady lead sync failed; capture remains successful:", hubspotError);
-    }
-    return send(res, 201, { ok: true, message: "Your information was saved.", token });
-  } catch (error) {
-    console.error("ToastidReady lead capture error:", error);
-    return send(res, 500, { error: "Lead submission could not be completed." });
-  }
-});
-
-app.options("/api/toastidready-token", (req, res) => {
-  corsHeaders(res);
-  return res.status(204).end();
-});
-
-// Anonymous entitlement token for users who skip lead capture.
-// Rate-limited per IP so one device can't mint unlimited 5-packs.
-app.post("/api/toastidready-token", async (req, res) => {
-  if (!checkAnonTokenRateLimit(getClientIP(req))) {
-    return send(res, 429, { error: "Too many free sessions from this network. Try again tomorrow." });
-  }
-  try {
-    const token = await getOrCreateToastidReadyToken({ email: null, ip: getClientIP(req) });
-    return send(res, 200, { token });
-  } catch (error) {
-    console.error("ToastidReady token issue error:", error);
-    return send(res, 500, { error: "Could not start a free session." });
-  }
-});
-
-app.options("/api/toastidready-paid", (req, res) => {
-  corsHeaders(res);
-  return res.status(204).end();
-});
-
-// Marks a token as paid after PayPal subscription approval. Idempotent.
-// NOTE: client-asserted (same trust level as the previous localStorage
-// approach). PayPal webhook verification is the follow-up that makes this
-// airtight; until then a forged call could mark a token paid.
-app.post("/api/toastidready-paid", async (req, res) => {
-  const token = getToastidReadyToken(req);
-  const subscriptionID = typeof req.body?.subscriptionID === "string" ? req.body.subscriptionID.trim() : "";
-  if (!token || !subscriptionID) {
-    return send(res, 400, { error: "token and subscriptionID are required." });
-  }
-  try {
-    const tokens = await loadToastidReadyTokens();
-    const rec = tokens.get(token);
-    if (!rec) return send(res, 401, { error: "Invalid session token." });
-    rec.paid = true;
-    rec.subscriptionID = subscriptionID.slice(0, 64);
-    await saveToastidReadyTokens();
-    return send(res, 200, { ok: true });
-  } catch (error) {
-    console.error("ToastidReady paid-mark error:", error);
-    return send(res, 500, { error: "Could not activate subscription." });
-  }
-});
-
-
-/* =========================
-   PULSEMATRIX (one-time purchase — static GitHub Pages frontend)
-   PayPal webhook records buyers in HubSpot; email-based verify endpoint
-   re-unlocks the app after cache clears, on any device.
-   Additive only: no existing BiteFact/ToastidReady route is modified.
-   ========================= */
-
-const PM_PAYPAL_CLIENT_ID = process.env.PAYPAL_CLIENT_ID || "";
-const PM_PAYPAL_CLIENT_SECRET = process.env.PAYPAL_CLIENT_SECRET || "";
-const PM_PAYPAL_WEBHOOK_ID = process.env.PAYPAL_WEBHOOK_ID || "";
-const PM_PAYPAL_API_BASE = String(process.env.PAYPAL_ENV || "live").toLowerCase() === "sandbox"
-  ? "https://api-m.sandbox.paypal.com"
-  : "https://api-m.paypal.com";
-const PM_PRICE = String(process.env.PULSEMATRIX_PRICE || "9.99");
-const PM_PAID_PROP = "pulsematrix_paid"; // HubSpot contact property (created once in the HubSpot UI)
-const PM_MASTERCODE = process.env.PULSEMATRIX_MASTERCODE || "";
-if (!PM_MASTERCODE) {
-  console.warn("PulseMatrix warning: PULSEMATRIX_MASTERCODE is empty — promo-code unlock is disabled.");
-}
-const PM_VERIFY_RATE_WINDOW_MS = 10 * 60 * 1000;
-const PM_VERIFY_RATE_MAX = 20;
-const pmVerifyLog = new Map();
-let pmPayPalTokenCache = null;
-
-function checkPulseMatrixRateLimit(ip) {
-  const now = Date.now();
-  const entry = pmVerifyLog.get(ip);
-  if (!entry || now >= entry.resetAt) {
-    pmVerifyLog.set(ip, { count: 1, resetAt: now + PM_VERIFY_RATE_WINDOW_MS });
-    return { allowed: true };
-  }
-  entry.count += 1;
-  if (entry.count > PM_VERIFY_RATE_MAX) {
-    return { allowed: false, retryAfter: Math.ceil((entry.resetAt - now) / 1000) };
-  }
-  return { allowed: true };
-}
-
-function validEmail(value) {
-  const email = String(value || "").trim().toLowerCase();
-  if (!email || email.length > 254 || !/^\S+@\S+\.\S+$/.test(email)) return null;
-  return email;
-}
-
-async function getPayPalAccessToken() {
-  if (!PM_PAYPAL_CLIENT_ID || !PM_PAYPAL_CLIENT_SECRET) {
-    throw new Error("PayPal API credentials (PAYPAL_CLIENT_ID / PAYPAL_CLIENT_SECRET) are not configured.");
-  }
-  if (pmPayPalTokenCache && Date.now() < pmPayPalTokenCache.expiresAt) {
-    return pmPayPalTokenCache.token;
-  }
-  const basic = Buffer.from(`${PM_PAYPAL_CLIENT_ID}:${PM_PAYPAL_CLIENT_SECRET}`).toString("base64");
-  const resp = await fetch(`${PM_PAYPAL_API_BASE}/v1/oauth2/token`, {
-    method: "POST",
-    headers: { "Authorization": `Basic ${basic}`, "Content-Type": "application/x-www-form-urlencoded" },
-    body: "grant_type=client_credentials"
-  });
-  if (!resp.ok) throw new Error(`PayPal OAuth failed (${resp.status}).`);
-  const data = await resp.json().catch(() => ({}));
-  if (!data.access_token) throw new Error("PayPal OAuth returned no access token.");
-  pmPayPalTokenCache = {
-    token: data.access_token,
-    expiresAt: Date.now() + (Number(data.expires_in) || 300) * 1000 - 60000
-  };
-  return pmPayPalTokenCache.token;
-}
-
-async function verifyPayPalWebhookSignature(req, rawBody) {
-  if (!PM_PAYPAL_WEBHOOK_ID) {
-    console.error("PulseMatrix webhook: PAYPAL_WEBHOOK_ID is not configured — cannot verify signature.");
-    return false;
-  }
-  const token = await getPayPalAccessToken();
-  const resp = await fetch(`${PM_PAYPAL_API_BASE}/v1/notifications/verify-webhook-signature`, {
-    method: "POST",
-    headers: { "Authorization": `Bearer ${token}`, "Content-Type": "application/json" },
-    body: JSON.stringify({
-      auth_algo: req.headers["paypal-auth-algo"],
-      cert_url: req.headers["paypal-cert-url"],
-      transmission_id: req.headers["paypal-transmission-id"],
-      transmission_sig: req.headers["paypal-transmission-sig"],
-      transmission_time: req.headers["paypal-transmission-time"],
-      webhook_id: PM_PAYPAL_WEBHOOK_ID,
-      webhook_event: JSON.parse(rawBody)
-    })
-  });
-  if (!resp.ok) {
-    console.error(`PulseMatrix webhook: PayPal signature check failed (${resp.status}).`);
-    return false;
-  }
-  const data = await resp.json().catch(() => ({}));
-  return data.verification_status === "SUCCESS";
-}
-
-async function hubspotPulseMatrixSearch(email) {
-  const resp = await fetch("https://api.hubapi.com/crm/v3/objects/contacts/search", {
-    method: "POST",
-    headers: {
-      "Authorization": `Bearer ${HUBSPOT_ACCESS_TOKEN}`,
-      "Content-Type": "application/json",
-      "Accept": "application/json"
-    },
-    body: JSON.stringify({
-      filterGroups: [{ filters: [{ propertyName: "email", operator: "EQ", value: email }] }],
-      properties: ["email", PM_PAID_PROP],
-      limit: 1
-    })
-  });
-  if (!resp.ok) {
-    const errText = await resp.text().catch(() => "");
-    throw new Error(`HubSpot contact search failed (${resp.status}): ${errText.slice(0, 300)}`);
-  }
-  return resp.json().catch(() => ({}));
-}
-
-async function markPulseMatrixPaid(email, details) {
-  if (!HUBSPOT_ACCESS_TOKEN) throw new Error("HUBSPOT_ACCESS_TOKEN is not configured.");
-  const properties = { email, [PM_PAID_PROP]: "true" };
-  let contactId = null;
-  let action = "updated";
-  try {
-    const searchData = await hubspotPulseMatrixSearch(email);
-    if (Array.isArray(searchData.results) && searchData.results.length > 0) {
-      contactId = searchData.results[0].id;
-      const current = searchData.results[0].properties || {};
-      if (String(current[PM_PAID_PROP]).toLowerCase() === "true") {
-        return { synced: true, action: "already_paid", contactId };
-      }
-      await hubspotBiteFactRequest("PATCH", `https://api.hubapi.com/crm/v3/objects/contacts/${encodeURIComponent(contactId)}`, properties, false);
-    } else {
-      const createData = await hubspotBiteFactRequest("POST", "https://api.hubapi.com/crm/v3/objects/contacts", properties, false);
-      contactId = createData.id || null;
-      action = "created";
-    }
-  } catch (err) {
-    if (/pulsematrix_paid/i.test(err.message)) {
-      console.error("PulseMatrix: HubSpot rejected the pulsematrix_paid property — create it in HubSpot (Settings → Properties → Contact properties, internal name exactly 'pulsematrix_paid').");
-    }
-    throw err;
-  }
-  // Record the order/capture IDs as a timeline note (non-blocking).
-  if (contactId) {
-    try {
-      await fetch("https://api.hubapi.com/crm/v3/objects/notes", {
-        method: "POST",
-        headers: {
-          "Authorization": `Bearer ${HUBSPOT_ACCESS_TOKEN}`,
-          "Content-Type": "application/json",
-          "Accept": "application/json"
-        },
-        body: JSON.stringify({
-          properties: {
-            hs_note_body: `PulseMatrix purchase — $${PM_PRICE} one-time.\nOrder: ${details.orderId || "n/a"}\nCapture: ${details.captureId || "n/a"}\nDate: ${details.date || "n/a"}`,
-            hs_timestamp: Date.now()
-          },
-          associations: [{ to: { id: contactId }, types: [{ associationCategory: "HUBSPOT_DEFINED", associationTypeId: 202 }] }]
-        })
-      });
-    } catch (noteErr) {
-      console.warn("PulseMatrix purchase note failed (non-blocking):", noteErr.message);
-    }
-  }
-  return { synced: true, action, contactId };
-}
-
-async function isPulseMatrixPaid(email) {
-  if (!HUBSPOT_ACCESS_TOKEN) throw new Error("HUBSPOT_ACCESS_TOKEN is not configured.");
-  const searchData = await hubspotPulseMatrixSearch(email);
-  if (!Array.isArray(searchData.results) || searchData.results.length === 0) return false;
-  const props = searchData.results[0].properties || {};
-  return String(props[PM_PAID_PROP]).toLowerCase() === "true";
-}
-
-app.options("/api/pulsematrix-webhook", (req, res) => {
-  corsHeaders(res);
-  return res.status(204).end();
-});
-
-app.post("/api/pulsematrix-webhook", async (req, res) => {
-  let event = null;
-  try {
-    const raw = req.rawBody ? req.rawBody.toString("utf8") : "";
-    event = raw ? JSON.parse(raw) : (req.body || null);
-    if (!event || typeof event.event_type !== "string") {
-      return send(res, 400, { error: "Invalid webhook event." });
-    }
-    if (event.event_type !== "PAYMENT.CAPTURE.COMPLETED") {
-      return send(res, 200, { ok: true, ignored: event.event_type });
-    }
-    const rawForVerify = req.rawBody ? req.rawBody.toString("utf8") : JSON.stringify(event);
-    const verified = await verifyPayPalWebhookSignature(req, rawForVerify);
-    if (!verified) {
-      console.error("PulseMatrix webhook: PayPal signature verification FAILED — event ignored.");
-      return send(res, 400, { error: "Invalid webhook signature." });
-    }
-    const resource = event.resource || {};
-    const amount = resource.amount || {};
-    if (resource.status !== "COMPLETED" || amount.currency_code !== "USD" || String(amount.value) !== PM_PRICE) {
-      console.warn(`PulseMatrix webhook: capture ignored (status/amount mismatch: ${resource.status} ${amount.value} ${amount.currency_code}).`);
-      return send(res, 200, { ok: true, ignored: "price_mismatch" });
-    }
-    const payerEmail = validEmail(resource.payer && resource.payer.email_address);
-    if (!payerEmail) {
-      console.warn("PulseMatrix webhook: capture had no usable payer email.");
-      return send(res, 200, { ok: true, ignored: "no_payer_email" });
-    }
-    const related = (resource.supplementary_data && resource.supplementary_data.related_ids) || {};
-    const result = await markPulseMatrixPaid(payerEmail, {
-      orderId: related.order_id || "",
-      captureId: resource.id || "",
-      date: new Date().toISOString()
-    });
-    console.log(`PulseMatrix purchase recorded: ${payerEmail}`, result);
-    return send(res, 200, { ok: true });
-  } catch (err) {
-    console.error("PulseMatrix webhook error:", err.message);
-    return send(res, 500, { error: "Webhook processing failed." });
-  }
-});
-
-app.options("/api/pulsematrix-verify", (req, res) => {
-  corsHeaders(res);
-  return res.status(204).end();
-});
-
-app.post("/api/pulsematrix-verify", async (req, res) => {
-  const rate = checkPulseMatrixRateLimit(getClientIP(req));
-  if (!rate.allowed) {
-    return send(res, 429, { error: "Too Many Requests", retryAfter: rate.retryAfter });
-  }
-  const body = req.body || {};
-  // Promo/master code path: checked server-side only, never exposed to the client.
-  const code = String(body.code || "").trim();
-  if (code) {
-    const expected = PM_MASTERCODE;
-    const match = expected.length > 0 && code.length === expected.length &&
-      crypto.timingSafeEqual(Buffer.from(code, "utf8"), Buffer.from(expected, "utf8"));
-    return send(res, 200, { ok: true, paid: !!match, via: "promo", promo_configured: expected.length > 0 });
-  }
-  const email = validEmail(body.email);
-  if (!email) {
-    return send(res, 400, { error: "A valid email address is required." });
-  }
-  try {
-    const paid = await isPulseMatrixPaid(email);
-    return send(res, 200, { ok: true, paid });
-  } catch (err) {
-    console.error("PulseMatrix verify error:", err.message);
-    return send(res, 500, { error: "Purchase verification is temporarily unavailable." });
   }
 });
 
