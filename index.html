@@ -3,47 +3,106 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
-<meta name="theme-color" content="#04060b">
-<title>BiteFact — Offline for Maintenance</title>
-<style>
-  * { margin:0; padding:0; box-sizing:border-box; }
-  html, body { height:100%; }
-  body {
-    background:#04060b;
-    background-image:radial-gradient(ellipse 80% 55% at 50% 38%, rgba(34,197,94,.12), transparent 70%);
-    color:#eceaf4;
-    font-family:-apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,Helvetica,Arial,sans-serif;
-    min-height:100vh; min-height:100dvh;
-    display:flex; align-items:center; justify-content:center;
-    text-align:center; padding:32px 24px;
-    animation:fadein .8s ease-out both;
-  }
-  @keyframes fadein { from { opacity:0; transform:translateY(10px); } to { opacity:1; transform:none; } }
-  .card { max-width:400px; }
-  .logo {
-    width:96px; height:96px; border-radius:24px; object-fit:cover;
-    margin:0 auto 28px; display:block;
-    box-shadow:0 8px 32px rgba(34,197,94,.30), 0 2px 8px rgba(0,0,0,.5);
-    animation:float 4s ease-in-out infinite;
-  }
-  @keyframes float { 0%,100% { transform:translateY(0); } 50% { transform:translateY(-8px); } }
-  .eyebrow {
-    font-size:12px; font-weight:600; letter-spacing:.22em; text-transform:uppercase;
-    color:#8f8fa8; margin-bottom:14px;
-  }
-  h1 { font-size:30px; font-weight:700; letter-spacing:-.01em; margin-bottom:14px; }
-  p { color:#a7a7bf; font-size:16px; line-height:1.65; }
-  .brand { margin-top:36px; font-size:13px; color:#55556a; }
-  .brand strong { color:#77778f; font-weight:600; }
-</style>
+<meta name="theme-color" content="#00aaff">
+<meta name="description" content="BiteFact is an AI-powered nutrition coach for estimating meals, tracking calories and macros, and building healthier habits.">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+
+<title>BiteFact | AI Nutrition Coach</title>
+
+<link rel="stylesheet" href="style.css">
+<link rel="manifest" href="manifest.json">
+<link rel="icon" href="assets/logo.png" type="image/png">
+<link rel="apple-touch-icon" href="assets/logo.png">
 </head>
+
 <body>
-  <div class="card">
-    <img class="logo" src="assets/logo.png" alt="BiteFact logo">
-    <div class="eyebrow">BiteFact</div>
-    <h1>Offline for maintenance and updates</h1>
-    <p>We're making BiteFact better for you. Thanks for your patience — we'll be back soon.</p>
-    <div class="brand"><strong>Toastid Tech, LLC</strong></div>
-  </div>
+
+<header class="app-header">
+    <img class="app-logo" src="assets/logo.png" alt="BiteFact logo">
+    <div>
+        <div class="app-status">IN DEVELOPMENT / TESTING</div>
+        <h1>BiteFact</h1>
+        <p>Your AI Nutrition Coach</p>
+    </div>
+</header>
+
+<section class="disclaimer-banner" aria-label="Nutrition disclaimer">
+    <strong>Estimate only:</strong> calories, macros, and AI insights are approximations, not medical advice, and may not be exact.
+</section>
+
+<section class="coach-card">
+    <h2>🤖 BiteFact AI</h2>
+    <p>Take a photo of your meal to estimate calories and macros. Review the estimate before saving it to your daily totals.</p>
+    <button type="button" class="camera-button" onclick="openCameraGuide(event)">Use Camera</button>
+    <p class="coach-note" id="cameraNote">Camera scans estimate portions and macros. You always stay in control.</p>
+</section>
+
+<section class="dashboard">
+    <div class="card">
+        <h3>Calories</h3>
+        <p id="calories">0 / 2200</p>
+    </div>
+
+    <div class="card">
+        <h3>Protein</h3>
+        <p id="protein">0g / 160g</p>
+    </div>
+
+    <div class="card">
+        <h3>Carbs</h3>
+        <p id="carbs">0g / 220g</p>
+    </div>
+
+    <div class="card">
+        <h3>Fat</h3>
+        <p id="fat">0g / 70g</p>
+    </div>
+
+    <button type="button" class="clear-totals-button" onclick="clearDailyTotals()">Clear today's totals</button>
+</section>
+
+<section class="meal-box">
+    <h2>Add Meal</h2>
+
+    <input id="foodName" placeholder="Food item">
+    <input id="foodCalories" type="number" placeholder="Calories">
+    <input id="foodProtein" type="number" placeholder="Protein grams">
+    <input id="foodCarbs" type="number" placeholder="Carbs grams">
+    <input id="foodFat" type="number" placeholder="Fat grams">
+
+    <button type="button" onclick="addMeal()">Add Meal</button>
+</section>
+
+<section class="coach">
+    <h2>🤖 Coach Insight</h2>
+    <p id="coachMessage">Welcome to BiteFact. Start by photographing a meal or logging one manually.</p>
+</section>
+
+<section class="plans">
+    <div class="plans-header">
+        <div>
+            <div class="section-kicker">Membership</div>
+            <h2>Your BiteFact Plan</h2>
+        </div>
+        <span class="current-plan" id="currentPlan">Free</span>
+    </div>
+    <div id="planOptions" class="plan-options"></div>
+</section>
+
+<script src="lead-capture.js"></script>
+<script src="app.js"></script>
+<script src="plans.js"></script>
+<script src="permissions.js"></script>
+<script>
+if ('serviceWorker' in navigator) {
+    window.addEventListener('load', () => {
+        navigator.serviceWorker.register('./sw.js').catch(error => {
+            console.warn('BiteFact service worker registration failed:', error);
+        });
+    });
+}
+</script>
+
 </body>
 </html>
