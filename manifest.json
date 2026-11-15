@@ -1,7 +1,7 @@
 {
   "id": "./",
   "name": "BiteFact AI Nutrition Coach",
-  "short_name": "BiteFact",
+  "short_name": "BiteFact AI",
   "description": "AI-powered nutrition tracking and meal estimation.",
   "start_url": "./",
   "scope": "./",
@@ -10,8 +10,13 @@
   "theme_color": "#00aaff",
   "icons": [
     {
-      "src": "assets/logo.png",
-      "sizes": "any",
+      "src": "assets/icon-ai-192.png",
+      "sizes": "192x192",
+      "type": "image/png"
+    },
+    {
+      "src": "assets/icon-ai-512.png",
+      "sizes": "512x512",
       "type": "image/png"
     }
   ]

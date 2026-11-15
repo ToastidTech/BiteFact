@@ -1,4 +1,4 @@
-const CACHE_NAME = "bitefact-v13-cloudrun";
+const CACHE_NAME = "bitefact-v14-cloudrun";
 
 const FILES = [
   "./",
@@ -9,6 +9,9 @@ const FILES = [
   "permissions.js",
   "manifest.json",
   "assets/logo.png",
+  "assets/bitefact-ai-logo.jpg",
+  "assets/icon-ai-192.png",
+  "assets/icon-ai-512.png",
   "assets/button-logo.png"
 ];
 
